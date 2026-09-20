@@ -31,6 +31,13 @@ class AgentView:
     age: int
     action: int
     in_band: bool
+    #: (energy, integrity, temperature, age) as the controller actually received
+    #: them this step. Differs from the physical values under any interoceptive
+    #: ablation or false-body intervention, which is exactly what makes a
+    #: sensed-versus-physical view possible. Recorded at the start of the step,
+    #: before body physics ran, so it lags the physical fields in this same
+    #: snapshot by one metabolic update - that is what the controller saw.
+    sensed_intero: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -65,6 +72,11 @@ class SimulationSnapshot:
         )
 
 
+#: Bumped when the frame or header layout changes incompatibly, so an old
+#: recording is rejected with a clear message instead of rendering wrongly.
+SCHEMA_VERSION = 2
+
+
 @dataclass
 class RecordingHeader:
     """Everything constant for a whole run, written once."""
@@ -75,6 +87,8 @@ class RecordingHeader:
     viable_temp_hi: float
     energy_max: float
     config: dict[str, Any]
+    schema_version: int = SCHEMA_VERSION
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ambient_array(self) -> np.ndarray:
@@ -112,7 +126,14 @@ def load_recording(path: str | Path) -> tuple[RecordingHeader, list[SimulationSn
     lines = Path(path).read_text().splitlines()
     if not lines:
         raise ValueError(f"{path} is empty")
-    header = RecordingHeader(**json.loads(lines[0])["header"])
+    head = json.loads(lines[0])["header"]
+    got = head.get("schema_version", 0)
+    if got != SCHEMA_VERSION:
+        raise ValueError(
+            f"{path} uses recording schema v{got}, this build reads v{SCHEMA_VERSION}. "
+            f"Re-record it with scripts/visualize.py --record."
+        )
+    header = RecordingHeader(**head)
     frames = [SimulationSnapshot.from_json(json.loads(l)) for l in lines[1:] if l.strip()]
     return header, frames
 
@@ -120,7 +141,12 @@ def load_recording(path: str | Path) -> tuple[RecordingHeader, list[SimulationSn
 def iter_recording(path: str | Path) -> Iterator[SimulationSnapshot]:
     """Stream frames without holding the whole run in memory."""
     with Path(path).open() as fh:
-        next(fh)
+        head = json.loads(next(fh))["header"]
+        got = head.get("schema_version", 0)
+        if got != SCHEMA_VERSION:
+            raise ValueError(
+                f"{path} uses recording schema v{got}, this build reads v{SCHEMA_VERSION}."
+            )
         for line in fh:
             if line.strip():
                 yield SimulationSnapshot.from_json(json.loads(line))

@@ -34,6 +34,14 @@ overturned one result.
 - **Persistence and regulation are separate endpoints.** Do not merge them.
 - **Pair contrasts by seed** where the design allows it; a seed fixes the world.
 - **Probes hold out lineages**, not observations.
+- **Interventions are scored against a magnitude-matched null.** Any big enough
+  push moves a softmax policy; report the null or report nothing.
+- **Ablate the channel the hypothesis names**, via
+  `sensors.interoception_channels`, not the whole body vector.
+- **Check the simple effects before believing an interaction.** One has already
+  passed its rule while running the opposite way to its claimed mechanism.
+- **Commit before running.** Results record the commit and a `dirty_worktree`
+  flag; a dirty result cannot be traced to any revision.
 
 ## A new experiment needs
 

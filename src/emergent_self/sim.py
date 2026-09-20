@@ -43,6 +43,11 @@ class Organism:
     last_action: int = 0
     last_moved: bool = False
     steps_since_birth: int = 0
+    #: The interoceptive slice of the observation actually delivered this step,
+    #: stored so a viewer can show the *sensed* body beside the physical one.
+    #: A viewer must never call `_observe` to obtain this: that would consume
+    #: sensor RNG and change the run it is supposed to be watching.
+    sensed_intero: tuple[float, ...] = ()
     # Counterfactual body that follows the same path under the same thermal
     # relaxation but generates no metabolic heat. Measurement only: nothing in
     # the simulation ever reads it, and no controller can sense it.
@@ -52,6 +57,8 @@ class Organism:
 @dataclass
 class RunResult:
     config: dict[str, Any]
+    #: git commit, dirty flag and library versions of the code that produced this.
+    provenance: dict[str, Any]
     digest: str
     seed: int
     condition: str
@@ -66,6 +73,10 @@ class RunResult:
     energy_ledger: dict[str, float] = field(default_factory=dict)
     probe_samples: list[dict[str, list[float]]] = field(default_factory=list)
     extinct_at: int | None = None
+    #: Fraction of the world's cells whose ambient temperature is inside the
+    #: viable band. The baseline for microenvironment selection; constant per
+    #: world, so it is recorded once rather than per step.
+    field_band_fraction: float = float("nan")
     summary: dict[str, float] = field(default_factory=dict)
 
 
@@ -94,7 +105,7 @@ class Simulation:
         self.events: list[tuple] = []
         # Recent body readings, used only when the population is too small for a
         # derangement to exist.
-        self._donor_history: collections.deque = collections.deque(maxlen=256)
+        self._donor_history: collections.deque = collections.deque(maxlen=2048)
         self._shock_steps = set(cfg.interventions.thermal_shock_steps)
         for _ in range(cfg.initial_agents):
             self._spawn_founder()
@@ -128,6 +139,7 @@ class Simulation:
                 energy=round(a.body.energy, 4), integrity=round(a.body.integrity, 4),
                 temperature=round(a.body.temperature, 4), age=a.body.age,
                 action=a.last_action, in_band=in_viable_band(a.body.temperature, b),
+                sensed_intero=list(a.sensed_intero),
             )
             for a in self.agents
         ]
@@ -152,7 +164,10 @@ class Simulation:
 
         from emergent_self.snapshot import RecordingHeader
 
+        from emergent_self.provenance import provenance
+
         return RecordingHeader(
+            provenance=provenance(),
             size=self.world.size,
             ambient=[[round(float(v), 4) for v in row] for row in self.world.ambient],
             viable_temp_lo=self.cfg.body.viable_temp_lo,
@@ -214,18 +229,35 @@ class Simulation:
             return None
         return INTERO_INDEX[iv.false_body_channel], iv.false_body_value
 
+    def _marginal_vector(self) -> np.ndarray | None:
+        """A body reading drawn from the empirical marginal built up over the run.
+
+        The `independent` interoception control. `shuffled` borrows from a
+        currently living organism, which destroys the self signal but preserves
+        a population signal: another body's readings still encode the present
+        density, ecological phase and thermal regime. Sampling each channel
+        independently from a long history destroys that too, at the cost of no
+        longer preserving the joint distribution across channels.
+        """
+        if self.cfg.sensors.interoception != "independent" or not self._donor_history:
+            return None
+        hist = np.array([v for _, v in self._donor_history])
+        idx = self.rng.intero_donor.integers(len(hist), size=hist.shape[1])
+        return hist[idx, np.arange(hist.shape[1])]
+
     def _observe(self, a: Organism, donors: dict[int, np.ndarray]) -> np.ndarray:
         s = self.cfg.sensors
         true_vec = sensors.interoceptive_vector(a.body, self.cfg.body)
         sensed = sensors.apply_interoception_mode(
             true_vec,
             cfg=s,
-            rng=self.rng.sensor,
+            rng=self.rng.sensor_noise,
             donor_vec=donors.get(a.ident),
             false_body=self._false_body_spec(),
+            marginal_vec=self._marginal_vector(),
         )
-        dx = int(self.rng.sensor.integers(self.world.size))
-        dy = int(self.rng.sensor.integers(self.world.size))
+        dx = int(self.rng.extero_decoy.integers(self.world.size))
+        dy = int(self.rng.extero_decoy.integers(self.world.size))
         return sensors.assemble(
             resource_patch=sensors.apply_extero_mode(
                 self.world.resource_patch(a.x, a.y, s.view_radius), s.resources,
@@ -253,21 +285,25 @@ class Simulation:
         unavailable the fallback is counted in `self.donor_fallbacks` and
         surfaced by the E0 validity gate, so it can never pass unnoticed.
         """
-        if self.cfg.sensors.interoception != "shuffled" or not self.agents:
+        mode = self.cfg.sensors.interoception
+        if mode not in ("shuffled", "independent") or not self.agents:
             return {}
         vecs = [sensors.interoceptive_vector(a.body, self.cfg.body) for a in self.agents]
         for a, v in zip(self.agents, vecs):
             self._donor_history.append((a.ident, v))
+        if mode == "independent":
+            # The history is the whole point of this mode; no derangement needed.
+            return {}
 
         n = len(self.agents)
         if n >= 2:
-            perm = sensors.derangement(n, self.rng.sensor)
+            perm = sensors.derangement(n, self.rng.intero_donor)
             return {a.ident: vecs[perm[i]] for i, a in enumerate(self.agents)}
 
         lone = self.agents[0]
         others = [v for ident, v in self._donor_history if ident != lone.ident]
         if others:
-            pick = int(self.rng.sensor.integers(len(others)))
+            pick = int(self.rng.intero_donor.integers(len(others)))
             return {lone.ident: others[pick]}
         self.donor_fallbacks += 1
         return {}
@@ -276,12 +312,15 @@ class Simulation:
 
     def step(self) -> None:
         cfg = self.cfg
+        # Clear first: an event appended before this line is discarded, which is
+        # what silently swallowed every shock event.
+        self.events = []
+
         if self.step_index in self._shock_steps:
             for a in self.agents:
                 a.body.temperature = cfg.interventions.thermal_shock_value
             self.events.append(("shock", cfg.interventions.thermal_shock_value))
 
-        self.events = []
         iv = cfg.interventions
         if iv.hidden_perturbation_prob > 0.0 and iv.hidden_perturbation_magnitude > 0.0:
             for a in self.agents:
@@ -301,6 +340,8 @@ class Simulation:
 
         for a in list(self.agents):
             obs = self._observe(a, donors)
+            lo, hi = sensors.channel_layout(cfg.sensors)["interoception"]
+            a.sensed_intero = tuple(round(float(v), 4) for v in obs[lo:hi])
             action = a.controller.act(obs, self.rng.action)
             dx, dy = ACTIONS[action]
             moved = action != 0
@@ -381,7 +422,10 @@ class Simulation:
                 self.ledger.remains += a.body.energy
                 self.lineage.death(a.ident, self.step_index)
                 self.deaths += 1
-                self.events.append(("death", a.ident))
+                # Carry the position: by the time a consumer sees this event the
+                # organism is gone from the snapshot, so an id alone cannot be
+                # located and the death can never be drawn.
+                self.events.append(("death", a.ident, a.x, a.y))
         self.agents = survivors
 
     # ----------------------------------------------------------------- logging
@@ -434,8 +478,11 @@ class Simulation:
         extinct_at = self.extinct_step
 
         finished = [r for r in self.lineage.records.values() if r.steps_alive > 0]
+        from emergent_self.provenance import provenance
+
         result = RunResult(
             config=asdict(self.cfg),
+            provenance=provenance(),
             digest=self.cfg.digest(),
             seed=self.cfg.seed,
             condition=self.cfg.condition,
@@ -456,6 +503,7 @@ class Simulation:
                 "clamped": self.ledger.clamped,
             },
             extinct_at=extinct_at,
+            field_band_fraction=self.world.field_band_fraction(self.cfg.body),
         )
         from emergent_self.analysis.metrics import summarise
 

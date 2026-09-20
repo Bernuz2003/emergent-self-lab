@@ -97,7 +97,10 @@ def run_replay(args) -> None:
                 break
             renderer.draw(frames[min(i, len(frames) - 1)])
             renderer.tick()
-            if not st.paused or st.step_once:
+            if st.step_once:
+                # A recording can be stepped in either direction.
+                i = (i - 1) % len(frames) if st.step_back else (i + 1) % len(frames)
+            elif not st.paused:
                 # A finished recording loops rather than freezing on its last
                 # frame, so a short run can be watched repeatedly.
                 i = (i + 1) % len(frames)

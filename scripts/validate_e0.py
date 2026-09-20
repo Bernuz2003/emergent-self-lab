@@ -10,6 +10,7 @@ from emergent_self.config import load_run_config
 
 
 def main() -> int:
+    _banner()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default=str(Path(__file__).parents[1] / "configs/e0_validity.json"))
     args = ap.parse_args()
@@ -28,6 +29,14 @@ def main() -> int:
         return 1
     print("All validity checks passed.")
     return 0
+
+
+def _banner() -> None:
+    from emergent_self.provenance import describe, warn_if_dirty
+
+    print(describe())
+    warn_if_dirty()
+    print()
 
 
 if __name__ == "__main__":

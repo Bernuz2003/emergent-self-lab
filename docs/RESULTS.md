@@ -6,48 +6,71 @@ purpose (`docs/METHODOLOGY.md`, "Statistics").
 
 ---
 
-## E1 — Interoception and homeostasis — **result retracted, re-run required**
+## E1 — Interoception and homeostasis
 
-The v0.2 write-up claimed *"H1 supported: thermoregulation evolved"* on the
-strength of a contrast between evolved conditions and a random controller
-(Hedges g = -0.92). **That contrast was an artifact and the claim is withdrawn.**
+### First run: result retracted
 
-Three defects, all since fixed, produced it:
+The v0.2 write-up claimed *"H1 supported: thermoregulation evolved"* from a
+contrast against a random controller at Hedges g = -0.92. **That contrast was an
+artifact.** `exposure_weighted_index` returned `0.0` when the late window held no
+organism; random populations die before reaching it, so **11 of 12 random runs
+contributed an invented zero**. Two further defects compounded it:
+`population_persisted` was read from the last logged row rather than `extinct_at`
+and disagreed with the extinction record in **15 of 60 runs**; and windows were
+relative to the surviving log, covering steps 900-1200 for a run that died early
+and 4500-6000 for one that did not. All three are fixed, and regulation and
+persistence are now separate endpoint families.
 
-1. **Missing data was scored as zero.** `exposure_weighted_index` returned `0.0`
-   when the late window contained no organism. Random-controller populations die
-   before reaching that window, so **11 of 12 random runs reported exactly
-   `0.0000`** — not a measured zero, an empty measurement. Those invented zeros
-   are what created the effect size. Missing data is now `NaN`, dropped from
-   every statistic, and the number of contributing seeds is printed beside each
-   contrast.
-2. **`population_persisted` was read from the last logged row** rather than from
-   `extinct_at`, so it disagreed with the extinction record in **15 of 60 runs**
-   and reported 0.75 for a condition that went extinct 12 times out of 12.
-3. **Windows were relative to the surviving log**, so "the last 25%" covered
-   steps 900–1200 for a run that died early and 4500–6000 for one that did not.
-   Windows are now absolute against the preregistered run length.
+### Second run, under the fixed metrics
 
-A fourth issue made the comparison unsound independently of the statistics: the
-endpoint pooled *regulation* and *persistence*. Whether a population continued to
-exist and whether it regulated its body temperature are different claims, and
-they are now separate endpoint families.
+| condition | thermal decoupling advantage |
+|---|---|
+| A — ambient + true interoception | 0.0356 |
+| B — ambient + shuffled interoception | **0.0827** |
+| C — shuffled ambient + true interoception | 0.0508 |
+| D — shuffled ambient + shuffled interoception | 0.0485 |
 
-The E1 numbers are also stale for a second reason: the RNG streams were split
-finer (see below), which changes every trajectory. E1 must be re-run before
-anything is claimed from it:
+The preregistered interaction `(C-D) - (A-B)` is **+0.0579**, 95% CI
+`[0.024, 0.086]`, dz = 1.27, positive in 6 of 7 fully usable seeds. **By the
+preregistered decision rule it passes.**
 
-```bash
-python scripts/run_experiment.py configs/e1_interoception.json
-python scripts/analyze.py runs/E1_interoception
-```
+It should not be reported as support for H2, for two reasons.
 
-What survives from the original run is the **diagnosis**, which the frozen assay
-has since confirmed independently: with the ambient channel intact, ambient
-temperature at the occupied cell predicted body temperature well enough that
-interoception was redundant, and organisms could regulate positionally.
+**The mechanism is the wrong way round.** The interaction is carried almost
+entirely by its first term:
 
----
+- with ambient available, `A - B = -0.0389`, CI `[-0.067, -0.016]`, dz = -0.90 —
+  true interoception performs **worse** than shuffled;
+- with ambient removed, `C - D = +0.0076`, CI comfortably spanning zero.
+
+So the finding is not "interoception helps when the world stops broadcasting".
+It is "true interoception hurts when the world does broadcast". The same
+signature appears in E1b's stable arm at nearly the same magnitude
+(`-0.0384` vs E1's `-0.0367`, 11 of 12 seeds in the same direction), so it is
+systematic rather than noise — but it is not the claimed mechanism.
+
+**One arm of the interaction was contaminated.** This run predates the split of
+the sensor RNG. `shuffled` interoception consumes draws building its derangement
+and the exteroceptive decoy locations were drawn from the same stream, so
+C (interoception true) and D (interoception shuffled) — both with
+`ambient: shuffled` — received **completely different decoy sequences**. The
+`C - D` term is exactly the one this contaminates. Verified directly: the first
+six decoy coordinates differ entirely between the two conditions on a fixed seed.
+
+The correct statement, pending a re-run:
+
+> The preregistered interaction criterion is met, but the interaction is driven
+> primarily by a negative effect of true interoception when ambient information
+> is available, rather than by a positive interoceptive benefit when it is
+> absent. One of its two terms was additionally contaminated by a shared RNG
+> stream. The intended mechanistic interpretation is not established.
+
+### What replaces it
+
+E1c (`configs/e1c_temperature_only.json`) removes both confounds: it ablates the
+**temperature channel alone**, leaving energy, integrity and age veridical
+everywhere, and its decision rule requires the simple effect `A - B` to be
+positive so a negative stable-arm effect cannot carry the interaction by itself.
 
 ## Frozen assay — what evolution actually selected for — *recorded*
 
@@ -69,6 +92,19 @@ standardised worlds. This is the comparison a live population cannot provide.
 | final integrity | 0.132 | 0.068 | **-0.064** | [-0.116, -0.013] | -0.69 | 2/11 |
 | thermoregulation index | -0.127 | -0.143 | -0.016 | [-0.055, 0.028] | -0.21 | 3/11 |
 | regulation vs passive | -0.223 | -0.271 | -0.048 | [-0.101, 0.008] | -0.50 | 3/11 |
+
+### Intake is not merely a by-product of living longer
+
+Evolved organisms survive longer, so they have more steps in which to eat.
+Normalising intake by steps survived removes that:
+
+| | ancestral | evolved |
+|---|---|---|
+| resources per step | 0.067 | **0.132** |
+
+Paired difference **+0.0655**, bootstrap CI `[0.045, 0.088]`, dz = 1.72, positive
+in **11/11 seeds**. Acquisition roughly doubled per unit of time lived. The
+selection signal is foraging itself, not longevity.
 
 ### What this establishes
 
@@ -170,11 +206,76 @@ lineages. Holding out lineages instead, every apparent decode collapses below
 chance: the linear code is **lineage-specific**, and a decoder fit on some
 organisms actively mispredicts in others.
 
-Pushing the latent along the decoded energy direction moves the action
-distribution by a total variation of 0.292 (sd 0.109). Note this is measured on
-distributions now; the earlier figure of 0.047 came from comparing single
-sampled actions, which at a softmax temperature of 0.35 is mostly sampling noise.
+### The intervention was also uninterpretable, and is now scored against a null
 
-The standing conclusion is unchanged and now better supported: **information
-present is not information used**, and *decodable* has to mean decodable across
-lineages before it means anything at all.
+Pushing the latent along the decoded energy direction moves the action
+distribution by TV = 0.235. Along **12 norm-matched random directions** the mean
+is **0.265** — z = **-0.31**. The decoded direction is indistinguishable from a
+random one.
+
+That figure therefore carried no information about the direction; it reflected
+the size of the push. Which is what should have been expected once the grouped
+probe showed the decoded axis does not generalise across lineages: there was no
+reason for it to be a meaningful direction in the first place.
+
+This is the third correction to a number reported in this file. The earlier
+values were 0.047 (comparing single sampled actions, which at a softmax
+temperature of 0.35 is mostly sampling noise), then 0.292 (comparing
+distributions, but against no null). `intervention_with_null` now reports the
+null distribution and the z-score alongside every intervention.
+
+The standing conclusion is unchanged and better supported at each correction:
+**information present is not information used** — and before that, *decodable*
+must mean decodable across lineages, and *moved by a direction* must mean moved
+more than by a random one.
+
+
+---
+
+## Instruments added since the last review
+
+Three measurements that did not previously exist, all verified to run but none
+yet producing a recorded multi-seed result.
+
+### Body contingency (`scripts/run_contingency.py`)
+
+Same world, same position, same everything — except the organism's sensed body
+temperature, cold versus hot. If the channel is used, the two action
+distributions must differ. Reported as `tv_body` against `tv_null`, a
+magnitude-matched displacement of the *age* channel, because any large enough
+input change moves a softmax policy and a bare TV means nothing.
+
+### Sensor dissociation
+
+Three arms sharing a world, a start position and a frozen controller:
+veridical-cold, veridical-hot, and dissociated (physically hot, sensed cold).
+
+A structural note that shapes the design: sensed temperature is the only route
+body temperature takes into an observation, so on the first step the dissociated
+arm's observation is *identical* to veridical-cold's. The separation is entirely
+dynamic. And the dissociated arm is a **third trajectory, not a hybrid** — its
+physics are the hot arm's and its actions are the cold arm's, so it visits cells
+neither of the others visits and in smoke tests ended in better condition than
+both. `follows_sensed_margin` is the endpoint; the integrity figures are context.
+
+### Homeostasis decomposed
+
+`thermoregulation_index` was renamed to `thermal_decoupling_advantage`, because
+it scored **zero** for an organism that senses it is too hot, walks to a mild
+cell and stays there — body and ambient both in band, difference zero — which is
+textbook behavioural thermoregulation. The missing half is now measured:
+
+```
+thermal_decoupling_advantage = P(body in band)     - P(ambient occupied in band)
+microenvironment_selection   = P(ambient occupied) - P(field in band)
+------------------------------------------------------------------------------
+homeostatic_advantage        = P(body in band)     - P(field in band)
+```
+
+The field baseline is the fraction of the whole world in band, which is what a
+walker that does not select its microenvironment experiences on a torus.
+
+First reading, seed 3: field 0.700, occupied 0.580, so
+`microenvironment_selection = -0.121`. Organisms occupy cells **worse** than the
+world average. That is an independent confirmation of the frozen assay: they go
+where the food is, and the food is in the thermally hostile zones.

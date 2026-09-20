@@ -22,7 +22,7 @@
       "sensors.ambient"
     ],
     "design": "2x2 (ambient channel: true | shuffled) x (interoception: true | shuffled), plus a random-controller floor.",
-    "primary_endpoint": "thermoregulation_index",
+    "primary_endpoint": "thermal_decoupling_advantage",
     "endpoint_definition": "Pooled over every agent-step of organisms born in the final 25% of the run: P(body temperature inside the viable band) minus P(ambient temperature at the occupied cell inside the viable band). Positive only when the organism holds itself in band more often than its own occupied environment passively would. Chosen over raw band occupancy, which is survivorship-biased: organisms that leave the band die, so survivors are in band by construction.",
     "reference_condition": "D_neither",
     "floor_condition": "E_random_controller",

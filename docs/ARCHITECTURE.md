@@ -33,6 +33,7 @@ Five layers stay distinct, so semantic objectives cannot leak into controllers:
 | `assay.py` | frozen evaluation of snapshotted controllers |
 | `snapshot.py` | serialisable view of one step; recording and replay |
 | `viz/` | pygame renderer, optional (`pip install -e ".[viz]"`) |
+| `provenance.py` | git commit, dirty flag and library versions on every result |
 
 ## Random number streams
 
@@ -53,6 +54,12 @@ experience different worlds. Three such leaks have been found and closed:
 - **reproduction placement into resource dynamics.** A population that
   reproduced more shifted every subsequent resource position, so reproductive
   success silently altered the environment.
+- **interoceptive donor draws into exteroceptive decoy draws.** `shuffled`
+  interoception consumes draws building its derangement while `true` consumes
+  none, so two conditions differing only in interoception received different
+  *exteroceptive* decoy sequences. This contaminated exactly the `C - D` term of
+  the E1 interaction. The sensor stream is now split into `intero_donor`,
+  `extero_decoy` and `sensor_noise`.
 
 `check_rng_independence` asserts a 4-unit and a 64-unit controller see
 byte-identical resource placement, and `tests/test_reproducibility.py`
@@ -103,6 +110,14 @@ simulator knows nothing about them, so a recorded run replays with no simulator
 running and the visualiser can never become a second divergent implementation of
 simulation state. The static ambient field lives in a recording's header rather
 than in every frame.
+
+## Provenance
+
+A config digest identifies the *settings*, not the *code*. Every result file
+also records the git commit, whether the working tree was dirty, the package
+version and the interpreter version. `dirty_worktree` is the field that matters:
+a commit recorded alongside uncommitted edits does not identify what ran, and
+scripts print a warning when it is set.
 
 ## Reproducibility
 

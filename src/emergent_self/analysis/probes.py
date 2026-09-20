@@ -194,6 +194,41 @@ def probe(latents: np.ndarray, targets: np.ndarray, names, groups=None, seed: in
     return out
 
 
+def intervention_with_null(sim: Simulation, direction: np.ndarray, magnitude: float,
+                           trials: int = 400, n_null: int = 12, seed: int = 0) -> dict[str, float]:
+    """`latent_intervention` against norm-matched random directions.
+
+    A bare total variation is not interpretable. Any sufficiently large push to a
+    hidden state moves a softmax policy somewhat, so TV = 0.29 along a decoded
+    direction says nothing until it is compared with TV along random directions
+    of the same norm. This matters especially here, where the grouped probe shows
+    the decoded "energy direction" does not generalise across lineages and so may
+    not be a shared axis for anything.
+
+    Reports the decoded direction's TV, the null distribution's mean and spread,
+    and the z-score of the former against the latter.
+    """
+    rng = np.random.default_rng(seed)
+    real = latent_intervention(sim, direction, magnitude, trials=trials, seed=seed)
+    d = len(direction)
+    nulls = []
+    for i in range(n_null):
+        r = rng.normal(size=d)
+        nulls.append(latent_intervention(sim, r, magnitude, trials=trials, seed=seed)["total_variation"])
+    nulls = np.array([x for x in nulls if np.isfinite(x)])
+    if nulls.size == 0:
+        return {**real, "tv_null_mean": float("nan"), "tv_null_sd": float("nan"),
+                "z_vs_null": float("nan"), "n_null": 0.0}
+    sd = float(nulls.std(ddof=1)) if nulls.size > 1 else 0.0
+    return {
+        **real,
+        "tv_null_mean": float(nulls.mean()),
+        "tv_null_sd": sd,
+        "z_vs_null": (real["total_variation"] - float(nulls.mean())) / sd if sd > 1e-9 else float("nan"),
+        "n_null": float(nulls.size),
+    }
+
+
 def latent_intervention(sim: Simulation, direction: np.ndarray, magnitude: float,
                         trials: int = 400, seed: int = 0) -> dict[str, float]:
     """Push the hidden state along `direction` and measure the behavioural change.
@@ -261,7 +296,7 @@ def run_probe_suite(cfg: RunConfig, evolve_steps: int, probe_steps: int = 600) -
     sd[sd < 1e-9] = 1.0
     z = (latents - mu) / sd
     w = np.linalg.solve(z.T @ z + 1.0 * np.eye(z.shape[1]), z.T @ (bodies[:, 0] - bodies[:, 0].mean()))
-    effect = latent_intervention(sim, w / sd, magnitude=2.0)
+    effect = intervention_with_null(sim, w / sd, magnitude=2.0)
 
     return {
         "body": {p.target: p.__dict__ for p in body_probes},
@@ -269,7 +304,8 @@ def run_probe_suite(cfg: RunConfig, evolve_steps: int, probe_steps: int = 600) -
         "energy_direction_intervention": effect,
         "n_samples": int(len(latents)),
         "n_lineages": int(len(np.unique(groups))),
-        "note": ("Decodability shows information is present. The intervention row is "
-                 "what speaks to whether it is used. R^2 is held out across "
-                 "lineages, not across observations."),
+        "note": ("Decodability shows information is present; the intervention says "
+                 "whether it is used. R^2 is held out across lineages, not "
+                 "observations, and the intervention is scored against "
+                 "norm-matched random directions."),
     }

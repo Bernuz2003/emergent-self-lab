@@ -20,7 +20,8 @@ import numpy as np
 
 from emergent_self.config import BodyConfig, SensorConfig
 
-INTEROCEPTION_MODES = ("true", "shuffled", "noisy", "constant", "false_body")
+INTEROCEPTION_MODES = ("true", "shuffled", "noisy", "constant", "false_body", "independent")
+INTERO_CHANNELS = ("energy", "integrity", "temperature", "age")
 EXTEROCEPTION_MODES = ("true", "shuffled", "constant")
 N_ACTIONS = 5
 N_INTERO = 4
@@ -86,6 +87,18 @@ def interoceptive_vector(body, body_cfg: BodyConfig) -> np.ndarray:
     )
 
 
+def channel_mask(cfg: SensorConfig) -> np.ndarray:
+    """Boolean mask over (energy, integrity, temperature, age): which channels
+    the ablation touches. Everything else stays veridical."""
+    names = cfg.interoception_channels
+    if names is None:
+        return np.ones(N_INTERO, dtype=bool)
+    unknown = set(names) - set(INTERO_CHANNELS)
+    if unknown:
+        raise ValueError(f"unknown interoceptive channel(s): {sorted(unknown)}")
+    return np.array([c in names for c in INTERO_CHANNELS])
+
+
 def apply_interoception_mode(
     true_vec: np.ndarray,
     *,
@@ -93,25 +106,46 @@ def apply_interoception_mode(
     rng: np.random.Generator,
     donor_vec: np.ndarray | None,
     false_body: tuple[int, float] | None,
+    marginal_vec: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Transform ground-truth interoception according to the condition."""
+    """Transform ground-truth interoception according to the condition.
+
+    The transform is applied only to the channels named by
+    `cfg.interoception_channels`; the rest of the vector passes through
+    untouched. This is what makes a temperature-only ablation possible.
+    """
     mode = cfg.interoception
     if mode == "true":
         return true_vec
+
     if mode == "constant":
-        return np.full_like(true_vec, 0.5)
-    if mode == "noisy":
-        return np.clip(true_vec + rng.normal(0.0, cfg.interoception_noise, true_vec.shape), 0.0, 1.0)
-    if mode == "shuffled":
-        # Borrow another organism's body reading: same marginal, no self-coupling.
-        return true_vec.copy() if donor_vec is None else donor_vec.copy()
-    if mode == "false_body":
-        sensed = true_vec.copy()
+        ablated = np.full_like(true_vec, 0.5)
+    elif mode == "noisy":
+        ablated = np.clip(
+            true_vec + rng.normal(0.0, cfg.interoception_noise, true_vec.shape), 0.0, 1.0)
+    elif mode == "shuffled":
+        # Another *currently living* organism's reading. Preserves the population
+        # marginal exactly, but see `independent`: it also carries information
+        # about the present state of the population.
+        ablated = true_vec.copy() if donor_vec is None else donor_vec.copy()
+    elif mode == "independent":
+        # Drawn from an empirical marginal accumulated over the run, so it is
+        # decoupled from the *current* population state as well as from this
+        # body. `shuffled` removes the self signal but introduces a population
+        # signal - global density, ecological phase, the ambient regime everyone
+        # is currently in - which is a candidate explanation for shuffled
+        # outperforming true interoception, and has to be controlled separately.
+        ablated = true_vec.copy() if marginal_vec is None else marginal_vec.copy()
+    elif mode == "false_body":
+        ablated = true_vec.copy()
         if false_body is not None:
             index, value = false_body
-            sensed[index] = value
-        return sensed
-    raise ValueError(f"unknown interoception mode '{mode}'")
+            ablated[index] = value
+    else:
+        raise ValueError(f"unknown interoception mode '{mode}'")
+
+    mask = channel_mask(cfg)
+    return np.where(mask, ablated, true_vec)
 
 
 def apply_extero_mode(patch: np.ndarray, mode: str, decoy: np.ndarray | None,

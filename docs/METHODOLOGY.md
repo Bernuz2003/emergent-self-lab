@@ -36,6 +36,30 @@ homeostatic one.
 stretch of time for a run that died at step 1200 than for one that reached 6000.
 Windows are defined against the preregistered run length.
 
+**Name an endpoint for what it measures.** `thermoregulation_index` scored zero
+for an organism that senses it is too hot, walks to a mild cell and stays there —
+body and ambient both in band — which is textbook behavioural thermoregulation.
+It measured thermal *decoupling* from the occupied cell, and is now named that.
+The complementary half, choosing where to stand, is `microenvironment_selection`,
+and the two sum to `homeostatic_advantage`.
+
+**Every intervention needs a magnitude-matched null.** Any large enough push to a
+hidden state moves a softmax policy, and any change to an input moves it too. A
+total variation of 0.29 along a decoded direction looked like evidence until it
+was compared with norm-matched random directions, which gave 0.27 — z = -0.31.
+Report the null alongside the effect or do not report the effect.
+
+**Ablate the channel the hypothesis is about.** Replacing the whole interoceptive
+vector answers "do you know your own body", not "do you know your own
+temperature". With energy acquisition the dominant selection pressure here, the
+two are materially different experiments. `sensors.interoception_channels` names
+which channels an ablation touches.
+
+**Read the simple effects before believing an interaction.** E1's preregistered
+interaction passed while being carried by true interoception performing *worse*
+than shuffled when ambient was available — the opposite of the claimed mechanism.
+A decision rule should require the simple effect to point the right way too.
+
 **No endpoint here has a meaningful absolute zero.** Thermal inertia lets any body
 linger in band after entering a hostile cell, and in cold regions the metabolic
 heat of motion warms a body toward the band for free. Both give a random
@@ -111,6 +135,15 @@ integrity got significantly worse.
 For each major experiment use: random controller; reactive capacity-matched
 controller; shuffled interoception; true interoception; and, where applicable,
 memory-state permutation or predictive-head ablation.
+
+`shuffled` interoception is not a fully neutral control and should not be the
+only one. It borrows a reading from a *currently living* organism, so it removes
+the self signal but introduces a **population signal**: another body encodes the
+present density, ecological phase and ambient regime. That is a live candidate
+explanation for shuffled outperforming true interoception in E1 and E1b. The
+`independent` mode draws each channel from an empirical marginal accumulated over
+the run, decoupling it from the current population state as well, at the cost of
+no longer preserving the joint distribution across channels. Run both.
 
 Shuffled interoception must be a **derangement** of body readings across the
 living population, not an independently drawn donor per organism. An independent

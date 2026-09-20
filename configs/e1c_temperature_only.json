@@ -1,0 +1,63 @@
+{
+  "name": "E1c_temperature_only",
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  "preregistration": {
+    "hypothesis": "H2, third attempt, with the two confounds of E1b removed. E1 found no interoception effect because body temperature was inferable from position. E1b injected hidden perturbations to break that, but (a) ablated the whole body vector at once, so A-vs-B asked 'do you know your own body' rather than 'do you know your own temperature', which matters because the frozen assay showed energy acquisition is the dominant selection pressure; and (b) used a perturbation so severe that 6-7 of 12 seeds went extinct. E1c ablates the temperature channel alone, leaving energy, integrity and age veridical in every condition, at a calibrated perturbation.",
+    "null_hypothesis": "Decoupling the sensed temperature channel from the organism's own body temperature leaves the thermal decoupling advantage unchanged, whether or not hidden perturbations make body temperature inferable from position.",
+    "manipulated_variables": ["sensors.interoception", "sensors.interoception_channels", "interventions.hidden_perturbation_prob"],
+    "design": "2x2 (hidden temperature perturbation: on | off) x (temperature channel: true | deranged), plus an independent-marginal control and a random floor. Only the temperature channel is ever ablated.",
+    "primary_endpoint": "thermal_decoupling_advantage",
+    "endpoint_definition": "Pooled over every agent-step of organisms born in the final 25% of the preregistered run length: P(body temperature in the viable band) minus P(ambient temperature at the occupied cell in the viable band). Renamed from thermoregulation_index, which it was never a complete measure of: an organism that walks to a mild cell and stays there scores zero on it. The complementary half is the secondary endpoint microenvironment_selection, and the two sum to homeostatic_advantage. Seeds whose late window contains no organism are missing, not zero.",
+    "reference_condition": "B_perturbed_deranged",
+    "floor_condition": "F_random_controller",
+    "interaction": {
+      "a_plus": "A_perturbed_true",
+      "a_minus": "B_perturbed_deranged",
+      "b_plus": "C_stable_true",
+      "b_minus": "D_stable_deranged",
+      "description": "(temperature-sensing gain under hidden perturbation) minus (the same gain without it). Positive means sensing one's own temperature pays off specifically when that temperature cannot be inferred from the world. Report the two simple effects alongside it: in E1 the preregistered interaction passed while being driven by true interoception performing WORSE than shuffled when ambient was available, which is not the mechanism the hypothesis claims."
+    },
+    "secondary_endpoints": ["microenvironment_selection", "homeostatic_advantage", "regulation_vs_passive", "survival_fraction", "late_population", "median_lifespan"],
+    "capacity_control": "Observation width and controller parameter count are identical in every condition. Only the temperature slot of the interoceptive vector is touched; energy, integrity and age are veridical everywhere.",
+    "control_for_population_signal": "E_perturbed_independent draws the temperature reading from an empirical marginal accumulated over the run instead of from a living organism. The deranged control preserves the population marginal but a co-living body also carries information about the current population state - density, ecological phase, the ambient regime everyone is in. If B beats A because of that population signal rather than because of the missing self signal, E and B will differ.",
+    "decision_rule": "Reject a contrast's null only if its seed-paired bootstrap 95% CI excludes zero AND |dz| >= 0.5. Seeds with no usable late window are dropped as missing and the surviving pair count is reported. H2 is supported only if the interaction meets the same rule AND the simple effect (A - B) is positive, so that a negative effect of true sensing in the stable arm cannot carry the interaction on its own.",
+    "calibration_required_first": "Run scripts/calibrate.py over --perturb-prob and --perturb-mag until extinction in the perturbed arms matches the stable arms (1-2 of 12), then confirm with scripts/diagnose_redundancy.py that the perturbation actually lowered R^2(ambient -> body). The values below are a starting point, not a calibrated result: at prob 0.015 a perturbation arrives roughly every 67 steps against a thermal relaxation time of about 1/0.06 = 17 steps, so a body has about four time constants to recover. E1b used 0.06, which delivered a new displacement every 17 steps - one per relaxation time - which is a continuous thermal storm rather than an occasional disturbance to correct.",
+    "frozen_measurement": "The behavioural claim is settled by scripts/run_contingency.py on frozen controllers, not by this sweep. This sweep establishes whether the selection pressure exists; the contingency assay establishes whether an evolved controller uses the channel.",
+    "interpretation_limit": "A positive result would be evidence that evolved behaviour depends causally on a sensed temperature channel under these conditions. It is not evidence of felt temperature, discomfort, or any awareness of a body."
+  },
+  "base": {
+    "steps": 6000,
+    "initial_agents": 60,
+    "log_every": 10,
+    "controller": { "kind": "mlp", "hidden_dim": 24 },
+    "sensors": { "ambient": "true", "interoception_channels": ["temperature"] },
+    "interventions": { "hidden_perturbation_magnitude": 0.18 }
+  },
+  "conditions": {
+    "A_perturbed_true": {
+      "sensors": { "interoception": "true" },
+      "interventions": { "hidden_perturbation_prob": 0.015 }
+    },
+    "B_perturbed_deranged": {
+      "sensors": { "interoception": "shuffled" },
+      "interventions": { "hidden_perturbation_prob": 0.015 }
+    },
+    "C_stable_true": {
+      "sensors": { "interoception": "true" },
+      "interventions": { "hidden_perturbation_prob": 0.0 }
+    },
+    "D_stable_deranged": {
+      "sensors": { "interoception": "shuffled" },
+      "interventions": { "hidden_perturbation_prob": 0.0 }
+    },
+    "E_perturbed_independent": {
+      "sensors": { "interoception": "independent" },
+      "interventions": { "hidden_perturbation_prob": 0.015 }
+    },
+    "F_random_controller": {
+      "sensors": { "interoception": "true" },
+      "controller": { "kind": "random" },
+      "interventions": { "hidden_perturbation_prob": 0.015 }
+    }
+  }
+}

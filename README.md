@@ -40,7 +40,7 @@ python -m venv .venv
 source .venv/bin/activate          # fish: source .venv/bin/activate.fish
 pip install -e ".[dev,viz]"
 
-pytest                                            # 72 invariant tests
+pytest                                            # 92 invariant tests
 python scripts/validate_e0.py                     # simulator validity gate
 python scripts/visualize.py --seed 4              # watch a run
 python scripts/run_assay.py --n-seeds 12          # what did evolution select for?
@@ -113,6 +113,9 @@ scripts/analyze.py             distributions, bootstrap CIs, effect sizes,
 
 scripts/run_assay.py           evolve, snapshot, then evaluate frozen against
                                the ancestral cohort, paired within seed
+scripts/run_contingency.py     does an evolved controller act on its own body?
+                               same world, different body; then falsify the
+                               sensor and see which one the actions follow
 scripts/run_probes.py          decode body and world variables from latent
                                state across held-out lineages, then intervene
 scripts/visualize.py           watch a run live, record it, or replay it
@@ -160,6 +163,15 @@ ground:
 Selection is strong and its target is **foraging**, not thermoregulation — which
 did not improve, and was purchased partly at the cost of bodily integrity.
 
+**The E1 interaction passes its rule but not its mechanism.** A re-run under the
+fixed metrics gives interaction `(C-D) - (A-B) = +0.058`, CI `[0.024, 0.086]`,
+dz = 1.27 — which the preregistered rule accepts. It should not be read as
+support for H2: the interaction is carried by `A - B = -0.039` (true
+interoception performing *worse* than shuffled when ambient is available), not by
+any benefit when ambient is removed, and the `C - D` term was contaminated by a
+since-fixed shared RNG stream. `configs/e1c_temperature_only.json` removes both
+problems.
+
 **A retracted claim.** An earlier write-up reported "H1 supported:
 thermoregulation evolved", from a random-vs-evolved contrast at Hedges g = -0.92.
 That contrast was an artifact: the endpoint scored a *missing* late window as
@@ -167,13 +179,13 @@ That contrast was an artifact: the endpoint scored a *missing* late window as
 contributed an invented zero. Missing data is now `NaN` and the seed count is
 printed beside every contrast. `docs/RESULTS.md` has the full post-mortem.
 
-**Two probe results, both corrected.** Body temperature appeared decodable from a
+**Two probe claims, both withdrawn.** Body temperature appeared decodable from a
 GRU hidden state at R² ≈ 0.44. Holding out whole *lineages* instead of random
 observations, every decode collapses below chance: the code is lineage-specific,
-not a shared representation. Separately, pushing the latent along the decoded
-energy direction moves the action *distribution* by TV = 0.29 — the earlier
-figure of 0.047 compared single sampled actions, which at a softmax temperature
-of 0.35 is mostly sampling noise.
+not a shared representation. And pushing the latent along the decoded energy
+direction gives TV = 0.235 against **0.265 for norm-matched random directions**,
+z = -0.31 — indistinguishable from a random push. Every intervention is now
+reported with its null.
 
 ## Repository map
 
@@ -187,15 +199,40 @@ of 0.35 is mostly sampling noise.
 - `scripts/` — the workflow above.
 - `tests/` — physical invariants, sensor invariants, reproducibility guarantees.
 
+## Measuring homeostasis
+
+Homeostasis here has two halves, measured separately and summing exactly:
+
+```
+thermal_decoupling_advantage = P(body in band)     - P(ambient occupied in band)
+microenvironment_selection   = P(ambient occupied) - P(field in band)
+------------------------------------------------------------------------------
+homeostatic_advantage        = P(body in band)     - P(field in band)
+```
+
+The first is the body resisting the cell it stands in; the second is choosing
+which cell to stand in. An organism that walks to a mild spot and stays there
+scores zero on the first and high on the second, which is why the first was
+renamed from `thermoregulation_index`.
+
+First reading: organisms occupy cells **worse** than the world average
+(`microenvironment_selection = -0.12`). They go where the food is, and the food
+is in the hostile zones — an independent confirmation of the assay result above.
+
 ## Status
 
-`v0.3`. E0 passes (72 tests, 5 validity checks). The frozen assay has a recorded
-result. E1's earlier result is retracted and needs re-running under the fixed
-metrics and the finer RNG split. E1b (state-contingent homeostasis) runs but is
-underpowered at its current calibration and needs the perturbation softened.
-E2 (memory) and E4 (false body) have configs but should not be run yet — see
-`docs/experiments/E0_E5.md` for what each is missing. E3 and E5 are specified
-only.
+`v0.3`. E0 passes (92 tests, 5 validity checks) and every result records the git
+commit and dirty flag of the code that produced it.
+
+| | state |
+|---|---|
+| Frozen assay | recorded result |
+| E1 | first result retracted; re-run passes its rule but not its mechanism |
+| E1b | runs, underpowered, superseded by E1c |
+| E1c | specified, needs calibration then running |
+| Body contingency / sensor dissociation | implemented, not yet recorded |
+| E2, E4 | configs exist; both blocked on design faults documented in `docs/experiments/E0_E5.md` |
+| E3, E5 | specified only |
 
 ## License
 

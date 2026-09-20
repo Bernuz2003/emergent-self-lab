@@ -25,7 +25,7 @@ OVERLAYS = ("temperature", "energy", "integrity", "lineage", "age", "in_band")
 
 HELP = [
     "space  pause/resume",
-    "-> <-  step while paused",
+    "<- ->  step while paused",
     "+ -    speed",
     "tab    colour overlay",
     "t      trails",
@@ -63,6 +63,8 @@ class ViewState:
     selected: int | None = None
     quit: bool = False
     step_once: bool = False
+    #: Only a recording can step backwards; a live run ignores this.
+    step_back: bool = False
 
 
 class Renderer:
@@ -98,6 +100,7 @@ class Renderer:
         pg = self.pygame
         st = self.state
         st.step_once = False
+        st.step_back = False
         for e in pg.event.get():
             if e.type == pg.QUIT:
                 st.quit = True
@@ -106,8 +109,9 @@ class Renderer:
                     st.quit = True
                 elif e.key == pg.K_SPACE:
                     st.paused = not st.paused
-                elif e.key == pg.K_RIGHT:
+                elif e.key in (pg.K_RIGHT, pg.K_LEFT):
                     st.step_once = True
+                    st.step_back = e.key == pg.K_LEFT
                 elif e.key in (pg.K_PLUS, pg.K_EQUALS):
                     st.speed = min(240, st.speed * 2)
                 elif e.key == pg.K_MINUS:
@@ -202,9 +206,13 @@ class Renderer:
             if kind not in self._FLASH:
                 continue
             ttl, col = self._FLASH[kind]
-            if kind in ("birth", "death"):
+            if kind == "birth":
                 if e[1] in pos:
                     self.flashes.append((*pos[e[1]], ttl, col))
+            elif kind == "death":
+                # ("death", ident, x, y): the organism is already gone from the
+                # snapshot, so the event carries its last position.
+                self.flashes.append((e[2], e[3], ttl, col))
             else:
                 self.flashes.append((e[1], e[2], ttl, col))
 
@@ -226,11 +234,14 @@ class Renderer:
             self.trails.setdefault(a.ident, collections.deque(maxlen=self.trail_len)).append((a.x, a.y))
 
         c = self.cell
+        founders = {a.ident: a.founder for a in snap.agents}
         surf = self.pygame.Surface((self.grid_px, self.grid_px), self.pygame.SRCALPHA)
         for ident, path in self.trails.items():
             if len(path) < 2:
                 continue
-            col = palette.lineage(ident)
+            # Colour by lineage, matching the agent overlay. Colouring by ident
+            # gave siblings of one lineage different trails.
+            col = palette.lineage(founders.get(ident, ident))
             for i, (x, y) in enumerate(path):
                 alpha = int(90 * (i + 1) / len(path))
                 self.pygame.draw.circle(surf, (*col, alpha),
@@ -309,6 +320,21 @@ class Renderer:
                            f"{'inside' if sel.in_band else 'OUTSIDE'}", x, y,
                            FG if sel.in_band else (240, 120, 100), self.font_small)
             y = self._text(f"age {sel.age}   action {sel.action}", x, y, DIM, self.font_small)
+
+            # Sensed versus physical. Under an ablation or a false-body
+            # intervention these diverge, and the divergence is the experiment.
+            if len(sel.sensed_intero) == 4:
+                se, si, st_, sa = sel.sensed_intero
+                phys = (sel.energy / self.header.energy_max, sel.integrity,
+                        sel.temperature, None)
+                y += 6
+                y = self._text("sensed body (as delivered)", x, y, ACCENT, self.font_small)
+                for name, sv, pv in (("energy", se, phys[0]), ("integrity", si, phys[1]),
+                                     ("temp", st_, phys[2])):
+                    diverged = pv is not None and abs(sv - pv) > 1e-3
+                    y = self._text(
+                        f"  {name:<10}{sv:5.2f}" + (f"   true {pv:5.2f}" if diverged else ""),
+                        x, y, (240, 176, 96) if diverged else DIM, self.font_small)
 
         y = max(y + 14, self.screen.get_height() - len(HELP) * 14 - 12)
         for line in HELP:

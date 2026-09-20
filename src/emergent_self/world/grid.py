@@ -73,3 +73,14 @@ class GridWorld:
 
     def ambient_at(self, x: int, y: int) -> float:
         return float(self.ambient[x, y])
+
+    def field_band_fraction(self, body_cfg) -> float:
+        """Fraction of cells whose ambient temperature is inside the viable band.
+
+        The baseline an organism has to beat by *choosing where to stand*: on a
+        torus a walker that does not select its microenvironment visits cells
+        uniformly, so this is what it would experience.
+        """
+        inside = ((self.ambient >= body_cfg.viable_temp_lo)
+                  & (self.ambient <= body_cfg.viable_temp_hi))
+        return float(inside.mean())

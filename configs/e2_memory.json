@@ -14,7 +14,7 @@
     "hypothesis": "H3 - persistent internal state enables behaviour that depends on the organism's history rather than only on the current observation.",
     "null_hypothesis": "A capacity-matched recurrent controller occupies the viable band no more than a reactive one.",
     "manipulated_variable": "controller.kind",
-    "primary_endpoint": "thermoregulation_index",
+    "primary_endpoint": "thermal_decoupling_advantage",
     "reference_condition": "A_reactive_mlp",
     "capacity_control": "hidden_dim of the GRU is chosen with controller.match_hidden_dim so that parameter counts differ by less than 5%. Run scripts/capacity_match.py after changing the sensor layout.",
     "interpretation_limit": "A difference shows that history-dependence is useful here, not that the organism represents its own past.",

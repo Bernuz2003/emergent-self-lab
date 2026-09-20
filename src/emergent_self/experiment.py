@@ -62,6 +62,7 @@ def _execute(cfg: RunConfig) -> dict:
         "condition": result.condition,
         "seed": result.seed,
         "digest": result.digest,
+        "provenance": result.provenance,
         "summary": result.summary,
         "energy_ledger": result.energy_ledger,
         "extinct_at": result.extinct_at,
@@ -160,8 +161,11 @@ def build_report(exp: Experiment, results: list[dict]) -> dict:
             "description": spec.get("description", ""),
         }
 
+    from emergent_self.provenance import provenance
+
     return {
         "experiment": exp.name,
+        "provenance": provenance(),
         "preregistration": exp.prereg,
         "primary_endpoint": exp.endpoint,
         "per_condition": per_condition,

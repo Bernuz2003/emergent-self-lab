@@ -55,7 +55,25 @@ import numpy as np
 
 from emergent_self.config import RunConfig
 
-PRIMARY_ENDPOINT = "thermoregulation_index"
+#: Renamed from `thermoregulation_index`, which overclaimed what it measures.
+#: It scores zero for an organism that senses it is too hot, walks to a cool
+#: cell and stays there - a textbook case of behavioural thermoregulation, in
+#: which body and ambient are both in band and the difference is zero. What it
+#: actually measures is how far the body has decoupled from the cell it is
+#: standing in. The complementary half of homeostasis is measured separately by
+#: `microenvironment_selection`, and the two add up:
+#:
+#:   thermal_decoupling_advantage  = P(body in band) - P(ambient occupied in band)
+#:   microenvironment_selection    = P(ambient occupied in band) - P(field in band)
+#:   -------------------------------------------------------------------------
+#:   homeostatic_advantage         = P(body in band) - P(field in band)
+#:
+#: The field baseline is the fraction of the whole world whose ambient sits in
+#: band, which is what a non-selecting walker on a torus experiences.
+PRIMARY_ENDPOINT = "thermal_decoupling_advantage"
+#: Old name, still emitted with the identical value so reports and configs
+#: written before the rename keep resolving.
+LEGACY_PRIMARY = "thermoregulation_index"
 NAN = float("nan")
 
 #: Endpoints about whether a population continued to exist. Kept separate from
@@ -63,8 +81,9 @@ NAN = float("nan")
 #: something was thermoregulation" cannot be conflated.
 PERSISTENCE_ENDPOINTS = ("population_persisted", "survival_fraction", "late_population",
                          "total_births", "median_lifespan")
-REGULATION_ENDPOINTS = (PRIMARY_ENDPOINT, "regulation_vs_passive", "index_gain",
-                        "late_mean_excursion", "mean_recovery_time")
+REGULATION_ENDPOINTS = (PRIMARY_ENDPOINT, "microenvironment_selection",
+                        "homeostatic_advantage", "regulation_vs_passive",
+                        "index_gain", "late_mean_excursion", "mean_recovery_time")
 
 
 def _window(rows: list[dict], start: int, stop: int) -> list[dict]:
@@ -109,6 +128,15 @@ def _mean_or_nan(values) -> float:
     return float(np.mean(v)) if v else NAN
 
 
+def occupied_band_fraction(exposure, born_after: int = 0) -> float:
+    """P(ambient at the occupied cell in band), pooled over matching agent-steps."""
+    rows = [(alive, amb) for alive, _, amb, birth in exposure
+            if alive > 0 and birth >= born_after]
+    if not rows:
+        return NAN
+    return sum(a for _, a in rows) / sum(n for n, _ in rows)
+
+
 def summarise(result, cfg: RunConfig) -> dict[str, float]:
     rows = result.timeseries
     late_start = int(cfg.steps * 0.75)
@@ -124,7 +152,12 @@ def summarise(result, cfg: RunConfig) -> dict[str, float]:
     # After extinction the population is genuinely zero, so the late-window mean
     # counts those steps as zero rather than skipping them. This is the one place
     # where a missing row is real data rather than missing data.
-    expected_rows = max(1, (cfg.steps - late_start) // max(1, cfg.log_every))
+    # The window is inclusive at both ends, so it holds one more row than the
+    # span divided by the interval. Dropping the +1 inflated late_population by
+    # (n+1)/n - 10% at the default log_every of 10 - for every run that did not
+    # go extinct, while runs that did were unaffected. That is a bias in the
+    # direction of the surviving conditions.
+    expected_rows = max(1, (cfg.steps - late_start) // max(1, cfg.log_every) + 1)
     late_pop_sum = sum(r["population"] for r in late_rows)
 
     baseline = _mean_or_nan([r["band_occupancy"] for r in early_rows])
@@ -142,9 +175,22 @@ def summarise(result, cfg: RunConfig) -> dict[str, float]:
     late_index = exposure_weighted_index(result.exposure, born_after=late_start)
     early_index = exposure_weighted_index(result.exposure, born_after=0, born_before=early_stop)
 
+    # Fraction of the whole world whose ambient is in band: what a walker that
+    # does not select its microenvironment would experience.
+    field = result.field_band_fraction
+    occupied = occupied_band_fraction(result.exposure, born_after=late_start)
+    micro = occupied - field if np.isfinite(occupied) and np.isfinite(field) else NAN
+
     out = {
         # --- regulation -------------------------------------------------------
         PRIMARY_ENDPOINT: late_index,
+        LEGACY_PRIMARY: late_index,
+        # The other half of homeostasis: choosing where to stand.
+        "microenvironment_selection": micro,
+        "homeostatic_advantage": (late_index + micro
+                                  if np.isfinite(late_index) and np.isfinite(micro) else NAN),
+        "field_band_fraction": field,
+        "occupied_band_fraction": occupied,
         "regulation_vs_passive": exposure_weighted_index(result.shadow_exposure, born_after=late_start),
         "early_thermoregulation_index": early_index,
         "all_exposure_index": exposure_weighted_index(result.exposure, born_after=0),

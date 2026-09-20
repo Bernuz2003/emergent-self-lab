@@ -96,9 +96,16 @@ class SensorConfig:
     # true | shuffled | constant
     resources: str = "true"
     ambient: str = "true"
-    # true | shuffled | noisy | constant | false_body
+    # true | shuffled | noisy | constant | false_body | independent
     interoception: str = "true"
     interoception_noise: float = 0.15
+    #: Which interoceptive channels the mode applies to. `None` means all four.
+    #: Ablating the whole vector at once answers "do you know your own body?",
+    #: which is a different question from "do you know your own temperature?" -
+    #: and with energy acquisition the dominant selection pressure, conflating
+    #: them makes a thermal experiment partly an energetic one.
+    #: Valid names: energy, integrity, temperature, age.
+    interoception_channels: list[str] | None = None
 
 
 @dataclass

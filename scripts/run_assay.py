@@ -21,6 +21,7 @@ def _fmt(x, width=9, prec=3):
 
 
 def main() -> None:
+    _banner()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default="configs/e0_validity.json")
     ap.add_argument("--seed", type=int, default=0)
@@ -149,6 +150,14 @@ def _multi_seed(args, base, checkpoints, cfg) -> None:
             {"seeds": seeds, "final_label": final_label,
              "ancestral": anc, "evolved": fin}, indent=2))
         print(f"\nwrote {args.out}")
+
+
+def _banner() -> None:
+    from emergent_self.provenance import describe, warn_if_dirty
+
+    print(describe())
+    warn_if_dirty()
+    print()
 
 
 if __name__ == "__main__":

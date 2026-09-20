@@ -10,6 +10,7 @@ from emergent_self.config import ControllerConfig, load_run_config
 
 
 def main() -> None:
+    _banner()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default="configs/e0_validity.json")
     ap.add_argument("--controller", default="gru", choices=("mlp", "gru"))
@@ -52,10 +53,27 @@ def main() -> None:
     e = out["energy_direction_intervention"]
     print("Causal check - push the latent along the decoded energy direction:")
     sd = e.get("total_variation_sd")
-    print(f"  total variation in action distribution : {e['total_variation']:.3f}"
+    print(f"  TV along the decoded energy direction  : {e['total_variation']:.3f}"
           + (f" (sd {sd:.3f})" if sd is not None else ""))
+    print(f"  TV along {int(e.get('n_null', 0))} norm-matched random directions"
+          f"  : {e.get('tv_null_mean', float('nan')):.3f}"
+          f" (sd {e.get('tv_null_sd', float('nan')):.3f})")
+    z = e.get("z_vs_null", float("nan"))
+    print(f"  z of decoded vs random                 : {z:+.2f}")
+    import math as _m
+    if _m.isfinite(z) and z < 2.0:
+        print("  -> the decoded direction is not distinguishable from a random one;")
+        print("     this TV reflects the size of the push, not the direction's meaning.")
     print(f"  change in fraction of steps moving     : {e['delta_move_fraction']:+.3f}")
     print(f"\n{out['note']}")
+
+
+def _banner() -> None:
+    from emergent_self.provenance import describe, warn_if_dirty
+
+    print(describe())
+    warn_if_dirty()
+    print()
 
 
 if __name__ == "__main__":

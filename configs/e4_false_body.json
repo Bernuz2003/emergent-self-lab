@@ -14,7 +14,7 @@
     "hypothesis": "H5 - behaviour follows the sensed body state rather than the physical one, which is what it means for the organism to act on an internal representation.",
     "null_hypothesis": "Clamping the sensed energy channel away from its true value leaves behaviour unchanged.",
     "manipulated_variable": "interventions.false_body_*",
-    "primary_endpoint": "thermoregulation_index",
+    "primary_endpoint": "thermal_decoupling_advantage",
     "reference_condition": "A_veridical",
     "interpretation_limit": "Following a falsified signal shows the signal is used. Showing that it participates causally in planning requires the latent interventions in analysis/probes.py, not this contrast alone.",
     "endpoint_definition": "Pooled over every agent-step of organisms born in the final 25% of the run: P(body temperature inside the viable band) minus P(ambient temperature at the occupied cell inside the viable band). Positive only when the organism holds itself in band more often than its own occupied environment passively would. Chosen over raw band occupancy, which is survivorship-biased: organisms that leave the band die, so survivors are in band by construction."

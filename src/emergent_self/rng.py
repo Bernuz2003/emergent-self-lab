@@ -31,7 +31,15 @@ STREAMS = (
     "reproduction_placement",  # where a child is put
     "mutation",                # genome perturbation
     "action",                  # controller action sampling, and nothing else
-    "sensor",                  # donor choice, decoy location, sensor noise
+    # The sensor stream is split three ways. A single sensor stream still leaked:
+    # `shuffled` interoception consumes draws building its derangement, which
+    # shifted the exteroceptive decoy locations drawn immediately afterwards. So
+    # C (intero true, ambient shuffled) and D (intero shuffled, ambient shuffled)
+    # received completely different decoy sequences, contaminating exactly the
+    # contrast the E1 interaction rests on.
+    "intero_donor",            # derangement of body readings across the population
+    "extero_decoy",            # where an ablated exteroceptive channel reads from
+    "sensor_noise",            # additive noise on a sensed channel
     "init",                    # founder placement and controller initialisation
     "intervention",            # researcher-applied perturbations
 )
@@ -46,7 +54,9 @@ class RngBundle:
     reproduction_placement: np.random.Generator
     mutation: np.random.Generator
     action: np.random.Generator
-    sensor: np.random.Generator
+    intero_donor: np.random.Generator
+    extero_decoy: np.random.Generator
+    sensor_noise: np.random.Generator
     init: np.random.Generator
     intervention: np.random.Generator
 
