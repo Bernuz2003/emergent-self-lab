@@ -1,22 +1,24 @@
 """Does an evolved controller act on its own internal state?
 
-Two frozen tests, run on controllers snapshotted from an evolutionary run and
-compared against their own ancestors:
+Runs the standard frozen assays on controllers snapshotted from an evolutionary
+run, and compares each cohort against its own ancestors on identical ground.
 
-  body contingency     Same world, same position, same everything - except the
-                       organism's sensed body temperature, cold versus hot. If
-                       the channel is used at all, the two action distributions
-                       must differ. Reported against `tv_null`, a
-                       magnitude-matched change to the age channel, because any
-                       large enough input change moves a softmax policy.
+  body_contingency               same world, different body temperature: does
+                                 the action distribution differ, and by more
+                                 than a magnitude-matched change to a channel
+                                 with no thermal meaning?
 
-  sensor dissociation  Physical body hot, sensed body cold. Do the actions track
-                       the sensed reading while the body tracks the physical one?
+  sensor_dissociation            physically hot, told cold: do the actions
+                                 follow the reading rather than the body?
 
-A positive result here is the first real milestone of the project: an evolved
-agent using a representation of its own internal state to choose different
-actions under identical external conditions. It is not consciousness and not
-self-awareness.
+  viability_after_falsification  body forced out of band, then either told the
+                                 truth or told it is comfortable. Does reading
+                                 the channel truthfully actually help?
+
+The third is the one that turns "the channel is read" into "reading it matters".
+A positive result across all three is the roadmap's next concrete horizon: an
+evolved agent using a representation of its own internal state. It is not
+self-awareness and not consciousness.
 """
 from __future__ import annotations
 
@@ -28,17 +30,32 @@ from pathlib import Path
 
 import numpy as np
 
-from emergent_self.assay import ContingencyConfig, body_contingency, sensor_dissociation
+from emergent_self.assays import (
+    body_contingency,
+    memory_necessity,
+    sensor_dissociation,
+    viability_after_falsification,
+)
 from emergent_self.config import load_run_config
 from emergent_self.sim import Simulation
 
+ASSAYS = {
+    "body_contingency": (body_contingency, ("tv_body", "tv_null", "tv_ratio", "tv_excess")),
+    "sensor_dissociation": (sensor_dissociation,
+                            ("tv_vs_sensed_match", "tv_vs_physical_match",
+                             "follows_sensed_margin")),
+    "viability_after_falsification": (viability_after_falsification,
+                                      ("in_band_benefit", "integrity_benefit",
+                                       "time_to_band_truthful", "time_to_band_blinded")),
+    "memory_necessity": (memory_necessity, ("tv_after_wipe", "in_band_cost")),
+}
 
-def _fmt(x, w=9, p=3):
+
+def _fmt(x, w=10, p=4):
     return f"{'--':>{w}}" if x is None or not math.isfinite(x) else f"{x:>{w}.{p}f}"
 
 
 def _cohorts(base, checkpoints, k, rng):
-    """Evolve once, returning {label: [controllers]} at each checkpoint."""
     sim = Simulation(base)
     out, pending = {}, sorted(set(checkpoints))
     if 0 in pending:
@@ -47,8 +64,7 @@ def _cohorts(base, checkpoints, k, rng):
     for _ in range(base.steps):
         sim.step()
         if pending and sim.step_index >= pending[0]:
-            step = pending.pop(0)
-            out[f"step_{step}"] = sim.snapshot_controllers(k, rng)
+            out[f"step_{pending.pop(0)}"] = sim.snapshot_controllers(k, rng)
         if not sim.agents:
             break
     return {k_: v for k_, v in out.items() if v}, sim.extinct_step
@@ -63,77 +79,74 @@ def main() -> None:
     ap.add_argument("--n-seeds", type=int, default=1)
     ap.add_argument("--steps", type=int, default=6000)
     ap.add_argument("--controllers", type=int, default=6)
-    ap.add_argument("--sites", type=int, default=30)
-    ap.add_argument("--assay-seeds", type=int, default=4)
-    ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--assay-worlds", type=int, default=4)
+    ap.add_argument("--horizon", type=int, default=120)
     ap.add_argument("--interoception", default="true")
+    ap.add_argument("--interoception-channels", nargs="*", default=None)
     ap.add_argument("--controller-kind", default=None, choices=("mlp", "gru"))
+    ap.add_argument("--assays", nargs="+", default=list(ASSAYS), choices=list(ASSAYS))
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
     base = load_run_config(args.config)
-    base = replace(base, steps=args.steps,
-                   sensors=replace(base.sensors, interoception=args.interoception))
+    sensors = replace(base.sensors, interoception=args.interoception)
+    if args.interoception_channels is not None:
+        sensors = replace(sensors, interoception_channels=args.interoception_channels or None)
+    base = replace(base, steps=args.steps, sensors=sensors)
     if args.controller_kind:
         base = replace(base, controller=replace(base.controller, kind=args.controller_kind))
-    ccfg = ContingencyConfig(sites_per_world=args.sites,
-                             seeds=tuple(1000 + i for i in range(args.assay_seeds)))
+    worlds = tuple(1000 + i for i in range(args.assay_worlds))
 
     rows = []
     for seed in range(args.seed, args.seed + args.n_seeds):
         cohorts, extinct = _cohorts(replace(base, seed=seed), [0, args.steps],
                                     args.controllers, np.random.default_rng(seed))
         if extinct is not None:
-            print(f"  seed {seed}: extinct at {extinct}")
+            print(f"  seed {seed}: population extinct at step {extinct}")
         for label, controllers in cohorts.items():
-            bc = [body_contingency(c, base, ccfg) for c in controllers]
-            sd = [sensor_dissociation(c, base, ccfg, horizon=args.horizon) for c in controllers]
-            rows.append({
-                "seed": seed, "cohort": label, "n_controllers": len(controllers),
-                "tv_body": float(np.nanmean([r["tv_body"] for r in bc])),
-                "tv_null": float(np.nanmean([r["tv_null"] for r in bc])),
-                "tv_ratio": float(np.nanmean([r["tv_ratio"] for r in bc
-                                              if math.isfinite(r["tv_ratio"])])),
-                "follows_sensed_margin": float(np.nanmean(
-                    [r.get("follows_sensed_margin", math.nan) for r in sd])),
-                "integrity_dissociated": float(np.nanmean(
-                    [r.get("integrity_dissociated", math.nan) for r in sd])),
-                "integrity_veridical_hot": float(np.nanmean(
-                    [r.get("integrity_veridical_hot", math.nan) for r in sd])),
-                "integrity_veridical_cold": float(np.nanmean(
-                    [r.get("integrity_veridical_cold", math.nan) for r in sd])),
-            })
+            row = {"seed": seed, "cohort": label, "n_controllers": len(controllers)}
+            for name in args.assays:
+                fn, keys = ASSAYS[name]
+                results = [fn(c, base, world_seeds=worlds,
+                              **({} if name == "body_contingency" else {"horizon": args.horizon}))
+                           for c in controllers]
+                for k in keys:
+                    vals = [r.metrics[k] for r in results if math.isfinite(r.metrics[k])]
+                    row[f"{name}.{k}"] = float(np.mean(vals)) if vals else math.nan
+            rows.append(row)
 
-    print(f"\n{'cohort':<14}{'seeds':>6}{'tv_body':>10}{'tv_null':>9}{'ratio':>8}"
-          f"{'sensed margin':>15}{'integ diss':>12}{'integ hot':>11}{'integ cold':>12}")
-    print("-" * 97)
-    for label in sorted({r["cohort"] for r in rows},
-                        key=lambda s: (s != "ancestral", s)):
-        sub = [r for r in rows if r["cohort"] == label]
-        m = lambda k: float(np.nanmean([r[k] for r in sub]))
-        print(f"{label:<14}{len(sub):>6}{_fmt(m('tv_body'), 10)}{_fmt(m('tv_null'))}"
-              f"{_fmt(m('tv_ratio'), 8, 2)}{_fmt(m('follows_sensed_margin'), 15)}"
-              f"{_fmt(m('integrity_dissociated'), 12)}{_fmt(m('integrity_veridical_hot'), 11)}"
-              f"{_fmt(m('integrity_veridical_cold'), 12)}")
+    labels = sorted({r["cohort"] for r in rows}, key=lambda s: (s != "ancestral", s))
+    for name in args.assays:
+        _, keys = ASSAYS[name]
+        print(f"\n{name}")
+        print(f"  {'cohort':<14}{'seeds':>6}" + "".join(f"{k[:16]:>18}" for k in keys))
+        print("  " + "-" * (20 + 18 * len(keys)))
+        for label in labels:
+            sub = [r for r in rows if r["cohort"] == label]
+            cells = "".join(_fmt(float(np.nanmean([r[f'{name}.{k}'] for r in sub])), 18)
+                            for k in keys)
+            print(f"  {label:<14}{len(sub):>6}{cells}")
 
-    print("\n  tv_body > tv_null          : the temperature channel matters more than a")
-    print("                               magnitude-matched change to a meaningless one")
-    print("  sensed margin < 0          : actions track the sensed reading, not the body")
-    print("  integ diss ~ integ hot     : meanwhile the physical body follows physics")
-
-    if args.n_seeds > 1 and len({r["cohort"] for r in rows}) > 1:
+    if args.n_seeds > 1 and len(labels) > 1:
         from emergent_self.analysis.stats import paired_compare
 
-        print(f"\n{'metric':<26}{'evolved - ancestral':>20}{'95% CI':>20}{'dz':>7}{'pairs':>7}")
-        print("-" * 80)
-        final = f"step_{args.steps}"
-        for k in ("tv_body", "tv_ratio", "follows_sensed_margin"):
-            a = {r["seed"]: r[k] for r in rows if r["cohort"] == "ancestral"}
-            b = {r["seed"]: r[k] for r in rows if r["cohort"] == final}
-            c = paired_compare(b, a)
-            ci = f"[{_fmt(c['ci_lo'], 6)},{_fmt(c['ci_hi'], 6)}]".replace(" ", "")
-            print(f"{k:<26}{_fmt(c['mean_diff'], 20)}{ci:>20}"
-                  f"{_fmt(c['dz'], 7, 2)}{int(c['n_pairs']):>7}")
+        final = labels[-1]
+        print(f"\n{final} minus ancestral, seed-paired")
+        print(f"  {'metric':<44}{'diff':>10}{'95% CI':>22}{'dz':>7}{'pairs':>7}")
+        print("  " + "-" * 88)
+        for name in args.assays:
+            for k in ASSAYS[name][1]:
+                col = f"{name}.{k}"
+                a = {r["seed"]: r[col] for r in rows if r["cohort"] == "ancestral"}
+                b = {r["seed"]: r[col] for r in rows if r["cohort"] == final}
+                c = paired_compare(b, a)
+                ci = f"[{_fmt(c['ci_lo'], 7)},{_fmt(c['ci_hi'], 7)}]".replace(" ", "")
+                print(f"  {col:<44}{_fmt(c['mean_diff'])}{ci:>22}"
+                      f"{_fmt(c['dz'], 7, 2)}{int(c['n_pairs']):>7}")
+
+    print("\n  tv_ratio > 1            temperature matters more than a matched null change")
+    print("  follows_sensed_margin<0 actions track the reading, not the body")
+    print("  in_band_benefit > 0     reading the channel truthfully actually helps")
 
     if args.out:
         Path(args.out).write_text(json.dumps(rows, indent=2))

@@ -6,6 +6,7 @@ exploiting metabolic heat in the cold, sitting still - are usually obvious
 within seconds of watching.
 
   live:    python scripts/visualize.py --config configs/e0_validity.json --seed 4
+  paired:  python scripts/visualize.py --paired sensor_dissociation --evolve 4000
   record:  python scripts/visualize.py --config configs/e0_validity.json --record runs/run.jsonl --headless
   replay:  python scripts/visualize.py --replay runs/run.jsonl
 
@@ -108,6 +109,79 @@ def run_replay(args) -> None:
         renderer.close()
 
 
+PAIRED_SPECS = ("sensor_dissociation", "body_contingency", "memory_wipe", "actuator_remap")
+
+
+def _paired_specs(kind: str, horizon: int, world_seed: int):
+    """Two specs differing in exactly one declared field."""
+    from emergent_self.assays.library import (
+        body_contingency_specs,
+        sensor_dissociation_specs,
+    )
+    from emergent_self.assays.spec import AssaySpec, InitialState, RemapActuator, ResetMemory
+
+    worlds = (world_seed,)
+    if kind == "sensor_dissociation":
+        v_cold, _, dissoc = sensor_dissociation_specs(world_seeds=worlds, horizon=horizon)
+        return v_cold, dissoc
+    if kind == "body_contingency":
+        return body_contingency_specs(world_seeds=worlds, horizon=horizon)
+    intact = AssaySpec(name="intact", world_seeds=worlds, horizon=horizon,
+                       initial=InitialState(warmup=20, reset_memory_before_start=False))
+    if kind == "memory_wipe":
+        return intact, intact.with_(name="memory_wiped",
+                                    interventions=(ResetMemory(start=0),))
+    return intact, intact.with_(name="actuator_remapped",
+                                interventions=(RemapActuator(permutation=(0, 3, 4, 1, 2)),))
+
+
+def run_paired_view(args) -> None:
+    """Evolve briefly, take a controller, then run two arms in lockstep."""
+    import numpy as np
+
+    from emergent_self.sim import Simulation
+    from emergent_self.viz.paired import PairedRenderer
+
+    cfg = _build_config(args)
+    sim = Simulation(cfg)
+    for _ in range(args.evolve):
+        sim.step()
+        if not sim.agents:
+            raise SystemExit(f"population went extinct at step {sim.step_index}; "
+                             f"try a different --seed or a shorter --evolve")
+    picks = sim.snapshot_controllers(1, np.random.default_rng(args.seed))
+    if not picks:
+        raise SystemExit("no controller available to assay")
+
+    spec_a, spec_b = _paired_specs(args.paired, args.horizon, 1000 + args.seed)
+    print(f"paired: {spec_a.name} vs {spec_b.name}")
+    print(f"  {spec_a.describe()}")
+    print(f"  {spec_b.describe()}")
+    print(f"  differs in: {spec_b.differs_from(spec_a) or ['nothing']}")
+
+    r = PairedRenderer(picks[0], cfg, spec_a, spec_b, 1000 + args.seed, cell=args.cell)
+    try:
+        for _ in range(args.horizon):
+            r.handle_input()
+            if r.quit:
+                break
+            if r.paused and not r.step_once:
+                r.draw()
+                r.tick()
+                continue
+            if not r.advance():
+                r.draw()
+                break
+            r.draw()
+            r.tick()
+        while not r.quit:
+            r.handle_input()
+            r.draw()
+            r.tick()
+    finally:
+        r.close()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -121,11 +195,18 @@ def main() -> None:
     ap.add_argument("--record-every", type=int, default=1)
     ap.add_argument("--headless", action="store_true", help="record without opening a window")
     ap.add_argument("--replay", default=None)
+    ap.add_argument("--paired", default=None, choices=PAIRED_SPECS,
+                    help="paired counterfactual view: two arms, one declared difference")
+    ap.add_argument("--evolve", type=int, default=3000,
+                    help="steps of evolution before snapshotting the controller to assay")
+    ap.add_argument("--horizon", type=int, default=250, help="paired rollout length")
     args = ap.parse_args()
 
     if args.experiment and not args.condition:
         raise SystemExit("--experiment requires --condition")
-    if args.replay:
+    if args.paired:
+        run_paired_view(args)
+    elif args.replay:
         run_replay(args)
     else:
         run_live(args)

@@ -6,7 +6,7 @@ import pytest
 
 from emergent_self.agents.controller import build_controller
 from emergent_self.agents.sensors import derangement, observation_dim
-from emergent_self.assay import AssayConfig, run_trial
+from emergent_self.assays import AssayConfig, run_trial
 from emergent_self.config import ControllerConfig, RunConfig, SensorConfig
 from emergent_self.sim import Simulation
 from emergent_self.world.grid import ACTIONS
@@ -32,7 +32,7 @@ def test_assay_has_no_reproduction():
     controller and becomes another evolutionary run."""
     from dataclasses import replace
 
-    from emergent_self.assay import _assay_run_config
+    from emergent_self.assays.cohorts import _assay_run_config
 
     cfg = _assay_run_config(RunConfig(steps=1, seed=0), 1000, 200)
     sim = Simulation(cfg)
@@ -46,7 +46,7 @@ def test_assay_has_no_reproduction():
 
 def test_same_assay_seed_gives_every_controller_the_same_world():
     base = RunConfig(steps=1, seed=0)
-    from emergent_self.assay import _assay_run_config
+    from emergent_self.assays.cohorts import _assay_run_config
 
     w1 = Simulation(_assay_run_config(base, 1000, 50)).world
     w2 = Simulation(_assay_run_config(base, 1000, 50)).world

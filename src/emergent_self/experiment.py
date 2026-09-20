@@ -23,6 +23,13 @@ from emergent_self.config import RunConfig, run_config_from_dict
 from emergent_self.sim import Simulation
 
 
+#: Bumped when the stored result layout changes incompatibly, so an old
+#: report is rejected with a clear message rather than misread. Endpoint
+#: renames count: a reader that silently finds no `thermal_decoupling_advantage`
+#: would report a blank column instead of an error.
+RESULT_SCHEMA_VERSION = 1
+
+
 def deep_merge(base: dict, override: dict) -> dict:
     out = dict(base)
     for k, v in override.items():
@@ -59,6 +66,7 @@ class Experiment:
 def _execute(cfg: RunConfig) -> dict:
     result = Simulation(cfg).run()
     return {
+        "schema_version": RESULT_SCHEMA_VERSION,
         "condition": result.condition,
         "seed": result.seed,
         "digest": result.digest,
@@ -164,6 +172,7 @@ def build_report(exp: Experiment, results: list[dict]) -> dict:
     from emergent_self.provenance import provenance
 
     return {
+        "schema_version": RESULT_SCHEMA_VERSION,
         "experiment": exp.name,
         "provenance": provenance(),
         "preregistration": exp.prereg,

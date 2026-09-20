@@ -103,6 +103,20 @@ class Simulation:
         #: step and read by whatever is watching; nothing in the simulation
         #: consumes them.
         self.events: list[tuple] = []
+
+        # --- controlled-experiment hooks -----------------------------------
+        # All None during an ordinary evolutionary run, so nothing observes or
+        # perturbs a scored run unless an experiment declares it (see
+        # docs/ARCHITECTURE.md, "Separation of concerns"). The assay framework
+        # installs these rather than re-implementing the step loop, so there is
+        # exactly one copy of the physics.
+        #
+        #   sensor_filter(organism, obs)            -> obs            (before act)
+        #   action_filter(organism, action, probs)  -> action         (after act)
+        #   step_observer(organism, record)         -> None           (after physics)
+        self.sensor_filter = None
+        self.action_filter = None
+        self.step_observer = None
         # Recent body readings, used only when the population is too small for a
         # derangement to exist.
         self._donor_history: collections.deque = collections.deque(maxlen=2048)
@@ -340,9 +354,15 @@ class Simulation:
 
         for a in list(self.agents):
             obs = self._observe(a, donors)
+            if self.sensor_filter is not None:
+                obs = self.sensor_filter(a, obs)
             lo, hi = sensors.channel_layout(cfg.sensors)["interoception"]
             a.sensed_intero = tuple(round(float(v), 4) for v in obs[lo:hi])
-            action = a.controller.act(obs, self.rng.action)
+
+            probs = a.controller.action_probs(obs)
+            action = int(self.rng.action.choice(len(probs), p=probs))
+            if self.action_filter is not None:
+                action = self.action_filter(a, action, probs)
             dx, dy = ACTIONS[action]
             moved = action != 0
             if moved:
@@ -359,6 +379,17 @@ class Simulation:
             advance(a.body, moved=moved, ambient=ambient, cfg=cfg.body, ledger=self.ledger)
             a.shadow_temperature += cfg.body.thermal_coupling * (ambient - a.shadow_temperature)
             a.steps_since_birth += 1
+
+            if self.step_observer is not None:
+                self.step_observer(a, {
+                    "step": self.step_index, "x": a.x, "y": a.y,
+                    "action": action, "probs": probs, "obs": obs,
+                    "ambient": ambient,
+                    "energy": a.body.energy, "integrity": a.body.integrity,
+                    "temperature": a.body.temperature, "age": a.body.age,
+                    "shadow_temperature": a.shadow_temperature,
+                    "sensed_intero": a.sensed_intero,
+                })
 
             rec = self.lineage.records[a.ident]
             rec.steps_alive += 1

@@ -12,7 +12,7 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
-from emergent_self.assay import AssayConfig, evolve_and_assay
+from emergent_self.assays import AssayConfig, evolve_and_assay
 from emergent_self.config import ControllerConfig, SensorConfig, load_run_config
 
 

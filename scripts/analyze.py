@@ -23,7 +23,20 @@ def main() -> None:
     args = ap.parse_args()
 
     report = json.loads((Path(args.run_dir) / "report.json").read_text())
+    from emergent_self.experiment import RESULT_SCHEMA_VERSION
+
+    got = report.get("schema_version", 0)
+    if got != RESULT_SCHEMA_VERSION:
+        raise SystemExit(
+            f"{args.run_dir}/report.json uses result schema v{got}, this build reads "
+            f"v{RESULT_SCHEMA_VERSION}. Re-run the experiment; endpoint names and "
+            f"metric semantics have changed since that report was written."
+        )
     prereg = report.get("preregistration", {})
+    prov = report.get("provenance", {})
+    if prov.get("git_commit"):
+        dirty = " +DIRTY" if prov.get("dirty_worktree") else ""
+        print(f"produced by {prov['git_commit'][:10]}{dirty}")
 
     print(f"=== {report['experiment']} ===")
     if prereg.get("hypothesis"):

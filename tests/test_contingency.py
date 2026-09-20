@@ -1,23 +1,25 @@
-"""Body contingency and sensor dissociation: the frozen behavioural tests."""
+"""The frozen causal assays: body contingency and sensor dissociation."""
 from __future__ import annotations
 
 import math
 
 import numpy as np
+import pytest
 
 from emergent_self.agents.controller import build_controller
 from emergent_self.agents.sensors import observation_dim
-from emergent_self.assay import (
-    ContingencyConfig,
-    _observation_at,
-    body_contingency,
-    sensor_dissociation,
+from emergent_self.assays import body_contingency, measures as M, sensor_dissociation
+from emergent_self.assays.library import (
+    body_contingency_specs,
+    sensor_dissociation_specs,
+    viability_after_falsification,
 )
+from emergent_self.assays.runner import run_paired
 from emergent_self.config import ControllerConfig, RunConfig, SensorConfig
-from emergent_self.sim import Simulation
 from emergent_self.world.grid import ACTIONS
 
-SMALL = ContingencyConfig(sites_per_world=8, seeds=(1000, 1001), warmup=4)
+BASE = RunConfig(steps=1, seed=0)
+WORLDS = (1000, 1001)
 
 
 def _ctrl(seed=1, kind="mlp"):
@@ -26,92 +28,62 @@ def _ctrl(seed=1, kind="mlp"):
                             np.random.default_rng(seed))
 
 
-def test_observation_at_differs_only_in_the_temperature_slot():
-    from emergent_self.agents.sensors import channel_layout
-    from emergent_self.assay import _assay_run_config
-
-    cfg = _assay_run_config(RunConfig(steps=1, seed=0), 1000, 50)
-    sim = Simulation(cfg)
-    org = sim.inject(_ctrl())
-    cold = _observation_at(sim, org, 0.25)
-    hot = _observation_at(sim, org, 0.75)
-    lo, _ = channel_layout(cfg.sensors)["interoception"]
-    differing = np.flatnonzero(~np.isclose(cold, hot))
-    assert differing.tolist() == [lo + 2]
+def test_paired_specs_differ_in_exactly_one_field():
+    cold, hot = body_contingency_specs(world_seeds=WORLDS)
+    assert hot.differs_from(cold) == ["interventions"]
+    v_cold, v_hot, dissoc = sensor_dissociation_specs(world_seeds=WORLDS)
+    assert dissoc.differs_from(v_hot) == ["interventions"]
 
 
-def test_observation_at_restores_the_body():
-    from emergent_self.assay import _assay_run_config
+@pytest.mark.parametrize("kind", ("mlp", "gru"))
+def test_dissociated_and_sensed_matching_arms_are_identical_at_step_zero(kind):
+    """A structural guarantee, and the check that the design is wired correctly.
 
-    sim = Simulation(_assay_run_config(RunConfig(steps=1, seed=0), 1000, 50))
-    org = sim.inject(_ctrl())
-    before = org.body.temperature
-    _observation_at(sim, org, 0.95)
-    assert org.body.temperature == before
-
-
-def test_false_sensor_leaves_the_physical_body_alone():
-    from emergent_self.assay import _assay_run_config
-
-    sim = Simulation(_assay_run_config(RunConfig(steps=1, seed=0), 1000, 50))
-    org = sim.inject(_ctrl())
-    org.body.temperature = 0.80
-    _observation_at(sim, org, 0.80, sensed_override=0.20)
-    assert org.body.temperature == 0.80
+    Sensed temperature is the only route body temperature takes into an
+    observation, so an organism that is physically hot but told it is cold must
+    receive exactly what a veridically-cold one receives - provided the split
+    begins at step 0. An earlier version imposed it before a warmup, and twelve
+    steps of physically different bodies moved the arms apart before measurement
+    started.
+    """
+    v_cold, _, dissoc = sensor_dissociation_specs(world_seeds=WORLDS, horizon=40)
+    pairs = run_paired(_ctrl(kind=kind), BASE, dissoc, v_cold)
+    assert pairs
+    for a, b in pairs:
+        assert M.policy_divergence(a, b)["tv_first"] == 0.0
 
 
 def test_body_contingency_reports_a_matched_null():
-    out = body_contingency(_ctrl(), RunConfig(steps=1, seed=0), SMALL, assay_steps=120)
-    assert out["n_sites"] > 0
-    assert math.isfinite(out["tv_body"]) and math.isfinite(out["tv_null"])
-    assert 0.0 <= out["tv_body"] <= 1.0
+    r = body_contingency(_ctrl(), BASE, world_seeds=WORLDS)
+    assert r.n_worlds == len(WORLDS)
+    for k in ("tv_body", "tv_null", "tv_excess"):
+        assert math.isfinite(r.metrics[k])
+    assert 0.0 <= r.metrics["tv_body"] <= 1.0
 
 
 def test_body_contingency_is_deterministic():
-    a = body_contingency(_ctrl(), RunConfig(steps=1, seed=0), SMALL, assay_steps=120)
-    b = body_contingency(_ctrl(), RunConfig(steps=1, seed=0), SMALL, assay_steps=120)
-    assert a == b
-
-
-def test_dissociated_and_sensed_matching_arms_start_identical():
-    """A structural guarantee, not an empirical one: sensed temperature is the
-    only route body temperature takes into an observation, so on the first step
-    a physically-hot organism told it is cold receives exactly the observation a
-    veridically-cold one receives. Any later divergence is dynamics, which is
-    what the assay is actually measuring."""
-    from emergent_self.assay import _assay_run_config
-
-    sim = Simulation(_assay_run_config(RunConfig(steps=1, seed=0), 1000, 50))
-    org = sim.inject(_ctrl())
-    veridical_cold = _observation_at(sim, org, 0.25)
-    dissociated = _observation_at(sim, org, 0.75, sensed_override=0.25)
-    assert np.allclose(veridical_cold, dissociated)
+    a = body_contingency(_ctrl(), BASE, world_seeds=WORLDS)
+    b = body_contingency(_ctrl(), BASE, world_seeds=WORLDS)
+    assert a.metrics == b.metrics
 
 
 def test_sensor_dissociation_actions_track_the_sensed_reading():
-    out = sensor_dissociation(_ctrl(), RunConfig(steps=1, seed=0), SMALL,
-                              horizon=50, assay_steps=120)
-    assert out["n_worlds"] > 0
-    for k in ("tv_vs_sensed_match", "tv_vs_physical_match", "follows_sensed_margin"):
-        assert math.isfinite(out[k])
-    # Actions follow what the organism is told, not what its body is doing.
-    assert out["follows_sensed_margin"] < 0.0
+    r = sensor_dissociation(_ctrl(), BASE, world_seeds=WORLDS, horizon=60)
+    assert r.metrics["follows_sensed_margin"] < 0.0
 
 
-def test_dissociated_arm_is_a_third_trajectory_not_a_hybrid():
-    """Its physics are the hot arm's and its actions are the cold arm's, so it
-    goes somewhere neither of them goes. Asserting it must end near the
-    veridical-hot arm would be wrong: different actions mean a different path,
-    and therefore different ambient exposure and different damage."""
-    out = sensor_dissociation(_ctrl(), RunConfig(steps=1, seed=0), SMALL,
-                              horizon=50, assay_steps=120)
-    assert math.isfinite(out["integrity_dissociated"])
-    assert 0.0 <= out["integrity_dissociated"] <= 1.0
+def test_viability_assay_reports_both_arms():
+    """Roadmap section 1's missing half: a changed policy is not yet a useful one."""
+    r = viability_after_falsification(_ctrl(), BASE, world_seeds=WORLDS, horizon=60)
+    for k in ("in_band_truthful", "in_band_blinded", "in_band_benefit",
+              "integrity_benefit"):
+        assert math.isfinite(r.metrics[k])
 
 
-def test_contingency_does_not_mutate_the_supplied_controller():
+def test_assays_do_not_mutate_the_supplied_controller():
     c = _ctrl()
     before = c.genome().copy()
-    body_contingency(c, RunConfig(steps=1, seed=0), SMALL, assay_steps=120)
-    sensor_dissociation(c, RunConfig(steps=1, seed=0), SMALL, horizon=40, assay_steps=120)
+    body_contingency(c, BASE, world_seeds=WORLDS)
+    sensor_dissociation(c, BASE, world_seeds=WORLDS, horizon=40)
+    viability_after_falsification(c, BASE, world_seeds=WORLDS, horizon=40)
     assert np.allclose(c.genome(), before)

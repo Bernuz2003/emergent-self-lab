@@ -40,7 +40,7 @@ python -m venv .venv
 source .venv/bin/activate          # fish: source .venv/bin/activate.fish
 pip install -e ".[dev,viz]"
 
-pytest                                            # 92 invariant tests
+pytest                                           # 110 invariant tests
 python scripts/validate_e0.py                     # simulator validity gate
 python scripts/visualize.py --seed 4              # watch a run
 python scripts/run_assay.py --n-seeds 12          # what did evolution select for?
@@ -114,8 +114,9 @@ scripts/analyze.py             distributions, bootstrap CIs, effect sizes,
 scripts/run_assay.py           evolve, snapshot, then evaluate frozen against
                                the ancestral cohort, paired within seed
 scripts/run_contingency.py     does an evolved controller act on its own body?
-                               same world, different body; then falsify the
-                               sensor and see which one the actions follow
+                               same world / different body; falsify the sensor
+                               and see which the actions follow; then whether
+                               reading it truthfully actually helps
 scripts/run_probes.py          decode body and world variables from latent
                                state across held-out lineages, then intervene
 scripts/visualize.py           watch a run live, record it, or replay it
@@ -134,7 +135,17 @@ python scripts/visualize.py --experiment configs/e1_interoception.json \
     --condition A_ambient_and_intero --seed 4               # a specific condition
 python scripts/visualize.py --seed 4 --headless --record runs/run.jsonl
 python scripts/visualize.py --replay runs/run.jsonl         # no simulator needed
+
+# the causal microscope: two arms, one declared difference
+python scripts/visualize.py --paired sensor_dissociation --evolve 4000
 ```
+
+In paired mode the same controller runs twice in the same world, differing only
+in what the assay spec declares. The panel names the differing field, plots the
+divergence between the two action distributions, and marks a sensed body value
+whenever it parts company with the physical one — so a false-body dissociation
+is visible as it happens: one arm believing it is cool at 0.25 while its body
+sits at 0.66 and its integrity falls away.
 
 Background is the ambient thermal field; agent colour cycles through
 temperature, energy, integrity, lineage, age and in-band with `tab`; click an
@@ -219,9 +230,26 @@ First reading: organisms occupy cells **worse** than the world average
 (`microenvironment_selection = -0.12`). They go where the food is, and the food
 is in the hostile zones — an independent confirmation of the assay result above.
 
+## Frozen causal assays
+
+Evolve once, then ask many controlled questions of the frozen controller. An
+assay is declared as data, not written as a loop:
+
+```python
+cold = AssaySpec(name="cold", horizon=120,
+                 interventions=(SetBody(channel="temperature", value=0.25),))
+hot  = cold.with_(name="hot",
+                  interventions=(SetBody(channel="temperature", value=0.75),))
+hot.differs_from(cold)          # ['interventions'] — checkable, not asserted
+```
+
+`SetBody` changes the body; `FalsifySensor` changes only the reading. Also
+`ResetMemory`, `RemapActuator`, `DisableAction`, `AddSensorNoise`. The five
+standard assays and what each can support are in `docs/ROADMAP_STATUS.md`.
+
 ## Status
 
-`v0.3`. E0 passes (92 tests, 5 validity checks) and every result records the git
+`v0.3`. E0 passes (110 tests, 5 validity checks) and every result records the git
 commit and dirty flag of the code that produced it.
 
 | | state |
@@ -233,6 +261,10 @@ commit and dirty flag of the code that produced it.
 | Body contingency / sensor dissociation | implemented, not yet recorded |
 | E2, E4 | configs exist; both blocked on design faults documented in `docs/experiments/E0_E5.md` |
 | E3, E5 | specified only |
+
+The roadmap's near-term block (`docs/IMPLEMENTATION_ROADMAP.md` §1–§6) is
+implemented; `docs/ROADMAP_STATUS.md` tracks it item by item and lists what to
+run next.
 
 ## License
 

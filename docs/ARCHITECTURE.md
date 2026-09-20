@@ -30,7 +30,11 @@ Five layers stay distinct, so semantic objectives cannot leak into controllers:
 | `analysis/stats.py` | bootstrap CIs, Hedges g, Cliff's delta |
 | `analysis/probes.py` | post-hoc decoding and causal latent interventions |
 | `analysis/validity.py` | the E0 gate |
-| `assay.py` | frozen evaluation of snapshotted controllers |
+| `assays/spec.py` | a controlled test declared as data |
+| `assays/runner.py` | executes a spec against a frozen controller |
+| `assays/measures.py` | outcomes computed from a trajectory |
+| `assays/library.py` | the standard assays, each a pair of specs |
+| `assays/cohorts.py` | evolve, snapshot at checkpoints, score each cohort |
 | `snapshot.py` | serialisable view of one step; recording and replay |
 | `viz/` | pygame renderer, optional (`pip install -e ".[viz]"`) |
 | `provenance.py` | git commit, dirty flag and library versions on every result |
@@ -92,6 +96,36 @@ between.
 Before comparing architectures, run `scripts/capacity_match.py` to choose a
 hidden width with a matching parameter count, and re-run it after any change to
 the sensor layout.
+
+## Experiment hooks
+
+`Simulation` exposes three hooks, all `None` during an ordinary run:
+
+```
+sensor_filter(organism, obs)           -> obs      before the controller acts
+action_filter(organism, action, probs) -> action   after it acts
+step_observer(organism, record)        -> None     after physics
+```
+
+The assay framework installs these rather than reimplementing the step loop, so
+assay physics and evolution physics are the same code by construction. A test
+asserts that installing an observer leaves the trajectory byte-identical.
+
+## The assay framework
+
+Roadmap §3: frozen assays are a general research primitive, not per-experiment
+utilities. An `AssaySpec` is data — initial state, interventions, sensor wiring,
+horizon — so two conditions can be written side by side and `differs_from` will
+say what actually differs between them rather than the author asserting it.
+
+Interventions compose: `SetBody` changes the body, `FalsifySensor` changes only
+the reading, `ResetMemory`, `RemapActuator`, `DisableAction`, `AddSensorNoise`.
+Everything the later stages need is expressible without new machinery: false
+bodies, memory ablation, body remapping, tool incorporation, novel threats.
+
+`SpecSession` runs a spec one step at a time. Both the batch runner and the
+paired live viewer drive it, so the viewer cannot drift from the experiment that
+produces the numbers.
 
 ## Two phases: evolution and assay
 
