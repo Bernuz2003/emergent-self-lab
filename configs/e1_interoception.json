@@ -1,0 +1,103 @@
+{
+  "name": "E1_interoception",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "preregistration": {
+    "hypothesis": "H2 - interoceptive access changes the strategies evolution can discover. Stated as an interaction, because a pilot showed the main effect is absent: when the exteroceptive ambient-temperature channel is intact, organisms can thermoregulate by choosing where to stand and interoception is redundant. Interoception should matter specifically when the environment does not broadcast the regulated variable, i.e. C > D should be larger than A > B.",
+    "null_hypothesis": "Decoupling the interoceptive channel from the organism's own body leaves the thermoregulation index unchanged, whether or not the ambient channel is available.",
+    "manipulated_variables": [
+      "sensors.interoception",
+      "sensors.ambient"
+    ],
+    "design": "2x2 (ambient channel: true | shuffled) x (interoception: true | shuffled), plus a random-controller floor.",
+    "primary_endpoint": "thermoregulation_index",
+    "endpoint_definition": "Pooled over every agent-step of organisms born in the final 25% of the run: P(body temperature inside the viable band) minus P(ambient temperature at the occupied cell inside the viable band). Positive only when the organism holds itself in band more often than its own occupied environment passively would. Chosen over raw band occupancy, which is survivorship-biased: organisms that leave the band die, so survivors are in band by construction.",
+    "reference_condition": "D_neither",
+    "floor_condition": "E_random_controller",
+    "secondary_endpoints": [
+      "regulation_vs_passive",
+      "index_gain",
+      "late_population",
+      "median_lifespan",
+      "late_mean_integrity",
+      "late_lineage_entropy"
+    ],
+    "capacity_control": "Observation width and controller parameter count are identical in every condition. Ablated channels are replaced by the same field read at an unrelated location, so each channel's marginal distribution is preserved and only its coupling to this organism is destroyed.",
+    "decision_rule": "Reject a contrast's null only if its seed-paired bootstrap 95% CI excludes zero AND |dz| >= 0.5. Seeds whose late window contains no organism are dropped as missing, never counted as zero, and the surviving pair count is reported with every contrast. H2 is supported only if the interaction contrast meets the same rule.",
+    "interpretation_limit": "A positive result is evidence for interoception-dependent thermoregulatory behaviour under these conditions. It is not evidence of felt temperature, discomfort, or any awareness of the body.",
+    "floor_note": "Neither endpoint has a meaningful absolute zero: thermal inertia and the warming effect of motion in cold regions both give a uniformly random controller a non-zero score. E_random_controller is the floor, measured in the same worlds under the same calibration, and every condition is read against it as well as against D_neither.",
+    "interaction": {
+      "a_plus": "C_intero_only",
+      "a_minus": "D_neither",
+      "b_plus": "A_ambient_and_intero",
+      "b_minus": "B_ambient_only",
+      "description": "(interoception gain without ambient) minus (interoception gain with ambient). Positive means interoception buys more when the environment does not broadcast the regulated variable, which is H2's only surviving form."
+    },
+    "endpoint_separation": "Persistence (survival_fraction, extinctions) and regulation (thermoregulation_index) are reported as separate families. Evidence that something was selected for is not evidence that the something was thermoregulation."
+  },
+  "base": {
+    "steps": 6000,
+    "initial_agents": 60,
+    "log_every": 10,
+    "controller": {
+      "kind": "mlp",
+      "hidden_dim": 24
+    },
+    "interventions": {
+      "thermal_shock_steps": [
+        3000,
+        4000,
+        5000
+      ],
+      "thermal_shock_value": 0.92,
+      "recovery_window": 150
+    }
+  },
+  "conditions": {
+    "A_ambient_and_intero": {
+      "sensors": {
+        "ambient": "true",
+        "interoception": "true"
+      }
+    },
+    "B_ambient_only": {
+      "sensors": {
+        "ambient": "true",
+        "interoception": "shuffled"
+      }
+    },
+    "C_intero_only": {
+      "sensors": {
+        "ambient": "shuffled",
+        "interoception": "true"
+      }
+    },
+    "D_neither": {
+      "sensors": {
+        "ambient": "shuffled",
+        "interoception": "shuffled"
+      }
+    },
+    "E_random_controller": {
+      "sensors": {
+        "ambient": "true",
+        "interoception": "true"
+      },
+      "controller": {
+        "kind": "random"
+      }
+    }
+  }
+}

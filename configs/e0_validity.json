@@ -1,0 +1,8 @@
+{
+  "name": "E0_validity",
+  "condition": "baseline",
+  "seed": 0,
+  "steps": 1200,
+  "initial_agents": 40,
+  "log_every": 5
+}

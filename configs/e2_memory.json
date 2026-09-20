@@ -1,0 +1,45 @@
+{
+  "name": "E2_memory",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "preregistration": {
+    "hypothesis": "H3 - persistent internal state enables behaviour that depends on the organism's history rather than only on the current observation.",
+    "null_hypothesis": "A capacity-matched recurrent controller occupies the viable band no more than a reactive one.",
+    "manipulated_variable": "controller.kind",
+    "primary_endpoint": "thermoregulation_index",
+    "reference_condition": "A_reactive_mlp",
+    "capacity_control": "hidden_dim of the GRU is chosen with controller.match_hidden_dim so that parameter counts differ by less than 5%. Run scripts/capacity_match.py after changing the sensor layout.",
+    "interpretation_limit": "A difference shows that history-dependence is useful here, not that the organism represents its own past.",
+    "endpoint_definition": "Pooled over every agent-step of organisms born in the final 25% of the run: P(body temperature inside the viable band) minus P(ambient temperature at the occupied cell inside the viable band). Positive only when the organism holds itself in band more often than its own occupied environment passively would. Chosen over raw band occupancy, which is survivorship-biased: organisms that leave the band die, so survivors are in band by construction."
+  },
+  "base": {
+    "steps": 6000,
+    "initial_agents": 60,
+    "log_every": 10,
+    "sensors": {
+      "interoception": "true"
+    }
+  },
+  "conditions": {
+    "A_reactive_mlp": {
+      "controller": {
+        "kind": "mlp",
+        "hidden_dim": 24
+      }
+    },
+    "B_recurrent_gru": {
+      "controller": {
+        "kind": "gru",
+        "hidden_dim": 7
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emergent-self-lab"
+version = "0.2.0"
+description = "Artificial-life experiments on emergent homeostasis and self-related representations"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+# pygame-ce, not pygame: on Python 3.14 pygame 2.6.1's font module fails with a
+# circular import and the renderer cannot draw any text. pygame-ce 2.5.8 works.
+viz = ["pygame-ce>=2.5.8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

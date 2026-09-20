@@ -1,0 +1,56 @@
+{
+  "name": "E1b_state_contingent",
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  "preregistration": {
+    "hypothesis": "H2, retested in a world that forces the issue. E1 found no interoception effect and diagnosed why: with the ambient channel intact, body temperature was largely inferable from position, so organisms could regulate by choosing where to stand. E1b injects hidden internal perturbations - body temperature is displaced by +/- 0.30 with probability 0.06 per organism per step, while the ambient field, the resource layout and the organism's position are left untouched. Two organisms standing on the same cell can therefore require opposite actions. Interoception should now pay off, and specifically more under perturbation than without it.",
+    "null_hypothesis": "Decoupling the interoceptive channel from the organism's own body leaves the thermoregulation index unchanged, whether or not hidden perturbations make body state inferable from position.",
+    "manipulated_variables": ["sensors.interoception", "interventions.hidden_perturbation_prob"],
+    "design": "2x2 (hidden perturbation: on | off) x (interoception: true | shuffled), plus a random-controller floor under perturbation.",
+    "primary_endpoint": "thermoregulation_index",
+    "endpoint_definition": "Pooled over every agent-step of organisms born in the final 25% of the preregistered run length: P(body temperature inside the viable band) minus P(ambient temperature at the occupied cell inside the viable band). Seeds whose late window contains no organism are missing, not zero.",
+    "reference_condition": "B_perturbed_shuffled",
+    "floor_condition": "E_random_controller",
+    "interaction": {
+      "a_plus": "A_perturbed_intero",
+      "a_minus": "B_perturbed_shuffled",
+      "b_plus": "C_stable_intero",
+      "b_minus": "D_stable_shuffled",
+      "description": "(interoception gain under hidden perturbation) minus (interoception gain without it). Positive means interoception pays off specifically when body state cannot be inferred from the world, which is the causal claim H2 actually makes."
+    },
+    "secondary_endpoints": ["regulation_vs_passive", "survival_fraction", "late_population", "median_lifespan", "late_mean_integrity"],
+    "capacity_control": "Observation width and controller parameter count are identical in every condition. The interoceptive ablation is a derangement of body readings across the living population: the marginal distribution is preserved exactly and no organism can receive its own reading.",
+    "decision_rule": "Reject a contrast's null only if its seed-paired bootstrap 95% CI excludes zero AND |dz| >= 0.5, over all 12 seeds with no seed dropped except those with no usable late window, whose count is reported. H2 is supported only if the interaction contrast also meets this rule.",
+    "confounds_checked_first": "Redundancy of the interoceptive signal (scripts/diagnose_redundancy.py) and extinction-driven power loss (scripts/calibrate.py). A null under high redundancy or high extinction says nothing about interoception.",
+    "interpretation_limit": "A positive result would be evidence that evolved behaviour depends causally on an interoceptive channel under these conditions. It is not evidence of felt temperature, discomfort, or any awareness of a body."
+  },
+  "base": {
+    "steps": 6000,
+    "initial_agents": 60,
+    "log_every": 10,
+    "controller": { "kind": "mlp", "hidden_dim": 24 },
+    "sensors": { "ambient": "true" }
+  },
+  "conditions": {
+    "A_perturbed_intero": {
+      "sensors": { "interoception": "true" },
+      "interventions": { "hidden_perturbation_prob": 0.06, "hidden_perturbation_magnitude": 0.30 }
+    },
+    "B_perturbed_shuffled": {
+      "sensors": { "interoception": "shuffled" },
+      "interventions": { "hidden_perturbation_prob": 0.06, "hidden_perturbation_magnitude": 0.30 }
+    },
+    "C_stable_intero": {
+      "sensors": { "interoception": "true" },
+      "interventions": { "hidden_perturbation_prob": 0.0, "hidden_perturbation_magnitude": 0.0 }
+    },
+    "D_stable_shuffled": {
+      "sensors": { "interoception": "shuffled" },
+      "interventions": { "hidden_perturbation_prob": 0.0, "hidden_perturbation_magnitude": 0.0 }
+    },
+    "E_random_controller": {
+      "sensors": { "interoception": "true" },
+      "controller": { "kind": "random" },
+      "interventions": { "hidden_perturbation_prob": 0.06, "hidden_perturbation_magnitude": 0.30 }
+    }
+  }
+}
